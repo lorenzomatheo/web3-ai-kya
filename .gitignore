@@ -1,2 +1,10 @@
 .env
 .genie/genie.db
+
+# Foundry
+out/
+cache/
+broadcast/
+
+# Node
+node_modules/
