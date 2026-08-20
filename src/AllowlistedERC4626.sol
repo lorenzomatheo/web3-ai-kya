@@ -49,6 +49,15 @@ contract AllowlistedERC4626 is ERC4626, Ownable {
         emit AllowlistUpdated(account, allowed);
     }
 
+    /// @notice Disabled. Renouncing would permanently freeze the allowlist.
+    /// @dev `Ownable` exposes this by default, and one call would leave a public,
+    /// verified vault unable to admit any new address ever again -- unusable for the
+    /// only thing it exists to do, with no recovery path. Reverts with a plain string
+    /// rather than a custom error so the product's error surface stays exactly eight.
+    function renounceOwnership() public pure override {
+        revert("AllowlistedERC4626: ownership is not renounceable");
+    }
+
     /// @dev Reverts **before** delegating to the inherited implementation, and that
     /// ordering is the entire point of decision 6. OZ 5.x `ERC4626.deposit` reads
     /// `maxDeposit(receiver)` on its first line and reverts
