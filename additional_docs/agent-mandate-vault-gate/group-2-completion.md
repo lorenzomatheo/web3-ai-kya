@@ -89,6 +89,36 @@ when the registry proxy is bricked or the agent NFT has been burned.
    or days, and decision 14 wants expiry to mean "authority ended", not a precise
    instant.
 
+## Correction from PR review: the error surface is eight *for a legitimate caller*
+
+PR review surfaced a ninth reachable error that this note originally missed:
+`ReentrancyGuardReentrantCall()`, OpenZeppelin's, declared at
+`ReentrancyGuard.sol:42` and reachable on both value paths via `nonReentrant`.
+
+The claim should be stated precisely rather than dropped. **The eight custom
+errors are the *product surface* — what a caller acting in good faith can
+encounter.** The ninth is a safety net reachable only by a caller who is actively
+re-entering, i.e. attacking, and when it fires the defence is working.
+
+Why it is recorded rather than fixed:
+
+- The wish's criterion enumerates four specific OZ errors —
+  `ECDSAInvalidSignature*`, `ERC721NonexistentToken`, `ERC4626ExceededMaxDeposit`,
+  `ERC20InsufficientAllowance` — and each of those signals a **design failure**
+  (forgetting `tryRecover`, forgetting the try/catch, mis-ordering the vault gate,
+  forgetting the share approval). This one signals the opposite.
+- OZ's `ReentrancyGuard` hardcodes its revert with no customisation hook, so
+  emitting our own error means hand-writing a security primitive. DESIGN is
+  explicit that `nonReentrant` is "load-bearing here, not belt-and-braces -- do
+  not drop it", and replacing it against a two-day deadline is a worse trade than
+  an imprecise sentence.
+- Adding a ninth *custom* error would contradict DESIGN's own enumeration of eight
+  and the demo's eleven-transaction count.
+
+No demo transaction can reach it: the router is bound to one vault at
+construction, and reaching the guard requires that vault or its asset to call back
+into the router.
+
 ## Handover
 
 **Group 3 (`AllowlistedERC4626`) is UNCLAIMED.** Flagging it explicitly so it is
