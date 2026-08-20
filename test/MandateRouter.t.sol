@@ -96,6 +96,13 @@ contract MandateRouterTest is BaseTest {
         return abi.encodePacked(r, s, v);
     }
 
+    /// @dev First four bytes of revert data. The cast reads the leading selector
+    /// word and cannot truncate a value, since revert data is not a number.
+    function _selectorOf(bytes memory reason) internal pure returns (bytes4) {
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return bytes4(reason);
+    }
+
     function _deposit(uint256 assets) internal returns (uint256 shares) {
         MandateRouter.Mandate memory m = _mandate();
         vm.prank(agent);
@@ -464,15 +471,32 @@ contract MandateRouterTest is BaseTest {
         MandateRouter.Mandate memory m = _mandate();
         bytes memory sig = _sign(m, principalPk);
 
+        uint256 succeeded;
         for (uint256 i = 0; i < 20; i++) {
             vm.prank(agent);
-            try router.depositFor(m, sig, 300e6) {}
-            catch {
+            try router.depositFor(m, sig, 300e6) {
+                succeeded++;
+            } catch (bytes memory reason) {
+                // The loop must terminate because the CAP bound -- not because the
+                // allowance ran out, not because of an unrelated revert. A bare
+                // `catch {}` here would let a router that rejected every deposit
+                // look identical to one where the cap worked.
+                assertEq(
+                    _selectorOf(reason),
+                    MandateRouter.ExceedsMandate.selector,
+                    "must terminate on the cap, not for another reason"
+                );
                 break;
             }
         }
 
         uint256 pulled = startBalance - usdc.balanceOf(principal);
+
+        // Exact figures, not bounds: `assertLe(pulled, CAP)` alone is satisfied by
+        // pulled == 0, so it would pass against a router that never accepted a
+        // single deposit.
+        assertEq(succeeded, 3, "300 x 3 = 900 fits under a 1,000 cap; the fourth must not");
+        assertEq(pulled, 900e6, "exactly three deposits' worth left the principal");
         assertLe(pulled, CAP, "never pulls more than the cap");
         assertEq(router.spent(router.mandateKey(_digest(m), principal)), pulled, "spent tracks what was pulled");
         assertLt(pulled, ALLOWANCE, "and far less than the allowance");
