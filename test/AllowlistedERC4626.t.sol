@@ -190,6 +190,20 @@ contract AllowlistedERC4626Test is BaseTest {
         assertGt(vault.balanceOf(outsider), 0, "gate opened");
     }
 
+    /// @dev Called BY THE OWNER, which is the only account for whom the inherited
+    /// version would have succeeded -- so an owner-called test is the only one that
+    /// proves the override rather than the inherited `onlyOwner` gate.
+    function test_RenounceOwnershipIsDisabledEvenForTheOwner() public containment {
+        vm.prank(admin);
+        vm.expectRevert("AllowlistedERC4626: ownership is not renounceable");
+        vault.renounceOwnership();
+
+        // And the allowlist still works afterwards -- the gate was never frozen.
+        vm.prank(admin);
+        vault.setAllowlisted(outsider, true);
+        assertTrue(vault.allowlisted(outsider), "admin retains control");
+    }
+
     /// @dev De-allowlisting closes the gate again -- the operator can withdraw KYC.
     function test_DeAllowlistingClosesTheGate() public containment {
         vm.prank(admin);
