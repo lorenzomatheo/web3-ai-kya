@@ -55,6 +55,50 @@ button { font: inherit; cursor: pointer; }
   background: var(--accent); color: #fff; font-weight: 560; }
 #start:disabled { opacity: .5; cursor: default; }
 
+#next { font-size: 14px; padding: 10px 20px; border-radius: 999px;
+  border: 1px solid var(--accent); background: transparent; color: var(--accent); font-weight: 560;
+  max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#play { font-size: 13.5px; padding: 10px 18px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--muted); }
+#play:hover { color: var(--ink); border-color: var(--muted); }
+#next:disabled, #play:disabled { opacity: .45; cursor: default; }
+.progress { font-family: var(--mono); font-size: 12.5px; color: var(--faint); }
+
+/* the signed mandate */
+#mandate { margin-top: 44px; }
+.mcard { border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+  padding: 26px 28px; position: relative; overflow: hidden; }
+.mcard::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px;
+  background: linear-gradient(var(--accent), color-mix(in srgb, var(--accent) 25%, transparent)); }
+.mhead { display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.mkicker { font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--faint); }
+.mhead h3 { margin: 5px 0 0; font-size: 22px; font-weight: 640; letter-spacing: -.01em; }
+.seal { font-family: var(--mono); font-size: 12px; color: var(--good); white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--good) 45%, transparent); border-radius: 999px;
+  padding: 6px 14px; background: color-mix(in srgb, var(--good) 10%, transparent); }
+.mfields { display: grid; gap: 0; margin: 4px 0 0; }
+.mfields > div { display: grid; grid-template-columns: 92px 1fr; gap: 4px 16px;
+  padding: 12px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.mfields span { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+.mfields b { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.mfields em { grid-column: 2; font-style: normal; font-size: 12.8px; color: var(--muted); }
+.mfields u { text-decoration: none; border-bottom: 1px solid var(--muted); }
+.mabsent { margin: 18px 0 0; padding: 14px 16px; border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left: 3px solid var(--accent); font-size: 13.5px; color: var(--muted); }
+.mabsent strong { color: var(--ink); }
+.msig { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line); }
+.mrow { display: grid; grid-template-columns: 60px 1fr; gap: 12px; padding: 3px 0; align-items: baseline; }
+.mrow span { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+.mrow code { font-size: 11.5px; color: var(--muted); word-break: break-all; }
+.mfoot { margin: 14px 0 0; font-size: 12.8px; color: var(--faint); }
+@media (max-width: 620px) {
+  .mfields > div, .mrow { grid-template-columns: 1fr; }
+  .mfields em { grid-column: 1; }
+}
+
 section { margin-top: 64px; }
 h2 { font-size: 13px; font-family: var(--mono); letter-spacing: .13em; text-transform: uppercase;
   color: var(--faint); font-weight: 600; margin: 0 0 6px; padding-bottom: 13px;
@@ -68,7 +112,8 @@ h2 { font-size: 13px; font-family: var(--mono); letter-spacing: .13em; text-tran
 .sgrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .sbox { border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; background: var(--panel); }
 .sbox h4 { margin: 0 0 9px; font-size: 12.5px; font-weight: 640; letter-spacing: .02em; }
-.sbox h4 em { font-style: normal; color: var(--agent); font-weight: 500; font-size: 11.5px; }
+.sbox h4 em { font-style: normal; color: var(--faint); font-weight: 500; font-size: 11.5px; }
+.sbox.agent h4 em { color: var(--agent); }
 .sbox.agent { border-color: color-mix(in srgb, var(--agent) 40%, var(--line)); }
 .sbox div { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 2px 0; }
 .sbox span { color: var(--muted); }
@@ -139,7 +184,10 @@ footer { margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--line);
   <div id="status">connecting to anvil…</div>
   <div class="controls">
     <button id="start" disabled>Start</button>
-    <span class="muted" style="font-size:13.5px">~6 seconds · every step is a real transaction</span>
+    <button id="next" class="secondary hidden">Next</button>
+    <button id="play" class="ghost hidden">Play the rest</button>
+    <span id="progress" class="progress"></span>
+    <span class="muted" style="font-size:13.5px">every step is a real transaction — take them at your own pace</span>
   </div>
 </header>
 
@@ -158,6 +206,8 @@ footer { margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--line);
   <h2>The flow</h2>
   <ol id="flow" class="hidden"></ol>
 </section>
+
+<div id="mandate" class="hidden"></div>
 
 <section id="checks-section" class="hidden">
   <h2>What it refuses</h2>

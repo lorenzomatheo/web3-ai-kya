@@ -12,6 +12,19 @@ pnpm local-demo      # boots anvil + serves, prints the URL
 
 Ctrl-C stops both.
 
+## Pacing
+
+`Start` takes the first step and then waits. From there:
+
+- **Next** — one step at a time, labelled with what is about to happen, so you can
+  talk over it.
+- **Play the rest** — runs the remainder unattended, and turns into **Pause**.
+
+The signed mandate is drawn as a document once step 8 completes, because its *shape*
+is the argument: there is no principal field. The principal is derived from
+`registry.ownerOf(agentId)` and must equal the recovered signer, which is what makes
+transferring the identity self-revoking.
+
 ## Why a fresh chain and not a fork
 
 No RPC, no faucet, no network of any kind. A demo that depends on nothing external

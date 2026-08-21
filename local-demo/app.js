@@ -56,6 +56,8 @@ const SEL = {
   redeemFor: "0xed4cdda2",
   revoke: "0x8c64c575", // revoke((uint256,address,address,uint256,uint64,uint256))
   ownerOf: "0x6352211e",
+  totalAssets: "0x01e1d114",
+  totalSupply: "0x18160ddd",
 };
 
 const ERRORS = {
@@ -239,6 +241,8 @@ async function readState() {
       .catch(() => null),
     allowPrincipal: asBool(readWord(await ethCall(S.vault, SEL.allowlisted + wordAddr(ACC.principal)), 0)),
     allowAgent: asBool(readWord(await ethCall(S.vault, SEL.allowlisted + wordAddr(ACC.agent)), 0)),
+    vaultAssets: asBig(readWord(await ethCall(S.vault, SEL.totalAssets), 0)),
+    vaultSupply: asBig(readWord(await ethCall(S.vault, SEL.totalSupply), 0)),
   };
   renderState();
 }
@@ -472,12 +476,74 @@ function renderState() {
         <div><span>USDC</span>${z(s.agentAsset)}</div>
         <div><span>shares</span>${z(s.agentShares)}</div>
         <div><span>allowlisted</span><b class="${s.allowAgent ? "bad" : "good"}">${s.allowAgent ? "yes" : "no — by design"}</b></div></div>
-      <div class="sbox"><h4>Router</h4>
+      <div class="sbox"><h4>Router <em>pass-through</em></h4>
         <div><span>USDC</span>${z(s.routerAsset)}</div>
         <div><span>shares</span>${z(s.routerShares)}</div>
         <div><span>spent</span><b>${usdc(s.spent)} / ${usdc(CAP)}</b></div>
         <div><span>revoked</span><b>${s.revoked ? "yes" : "no"}</b></div></div>
+      <div class="sbox"><h4>Vault <em>KYC-gated</em></h4>
+        <div><span>total assets</span><b>${usdc(s.vaultAssets)}</b></div>
+        <div><span>shares issued</span><b>${s.vaultSupply}</b></div>
+        <div><span>holders</span><b>${(s.allowPrincipal ? 1 : 0)} allowlisted</b></div>
+        <div><span>gate is on</span><b>receiver</b></div></div>
     </div>`;
+}
+
+/** The mandate as the document it actually is.
+ *
+ *  Worth drawing rather than dumping: the shape is the argument. The principal is
+ *  NOT a field -- it is derived from `agentId` via the registry, which is what makes
+ *  transferring the id self-revoking. And the signature covers the digest, which
+ *  folds in chainId and verifyingContract, so the same struct signed for another
+ *  chain or another router is a different authorization. */
+function renderMandate() {
+  const m = S.mandate;
+  const sig = strip(S.sig);
+  const expiry = new Date(Number(m.expiry) * 1000);
+  const days = Math.round((Number(m.expiry) - Date.now() / 1000) / 86400);
+
+  $("#mandate").innerHTML = `
+    <div class="mcard">
+      <div class="mhead">
+        <div><span class="mkicker">signed off-chain · no gas · no transaction</span>
+          <h3>Mandate</h3></div>
+        <div class="seal" title="signed by the principal">✓ signed</div>
+      </div>
+
+      <div class="mfields">
+        <div><span>agentId</span><b>${m.agentId}</b>
+          <em>the identity. The principal is whoever owns it <u>right now</u> — transfer it and this dies.</em></div>
+        <div><span>agent</span><b>${short(m.agent)}</b>
+          <em>the only address permitted to call.</em></div>
+        <div><span>target</span><b>${short(m.target)}</b>
+          <em>one vault, and no other.</em></div>
+        <div><span>cap</span><b>${usdc(m.cap)} USDC</b>
+          <em>cumulative. Redeeming does not give any of it back.</em></div>
+        <div><span>expiry</span><b>${expiry.toLocaleDateString()}</b>
+          <em>in ${days} days. Ends authority to redeem too, not just to deposit.</em></div>
+        <div><span>nonce</span><b>${m.nonce}</b>
+          <em>distinguishes otherwise identical mandates.</em></div>
+      </div>
+
+      <div class="mabsent">
+        <strong>No principal field.</strong> It is derived from
+        <code>registry.ownerOf(${m.agentId})</code> and must equal the recovered signer.
+        That is what binds the identity to the authorization rather than merely
+        mentioning it.
+      </div>
+
+      <div class="msig">
+        <div class="mrow"><span>digest</span><code>${S.digest}</code></div>
+        <div class="mrow"><span>r</span><code>0x${sig.slice(0, 64)}</code></div>
+        <div class="mrow"><span>s</span><code>0x${sig.slice(64, 128)}</code></div>
+        <div class="mrow"><span>v</span><code>0x${sig.slice(128, 130)}</code></div>
+      </div>
+      <p class="mfoot">
+        The digest folds in <code>chainId</code> and <code>verifyingContract</code>, so
+        this signature authorizes nothing on another chain or another router.
+      </p>
+    </div>`;
+  $("#mandate").classList.remove("hidden");
 }
 
 function renderSteps(list) {
@@ -533,48 +599,97 @@ async function runAllChecks() {
 
 // ---------------------------------------------------------------------------
 
-async function start() {
-  if (S.running) return;
-  S.running = true;
-  S.key = null;
-  $("#start").disabled = true;
-  $("#start").textContent = "running…";
-  $("#checks-section").classList.add("hidden");
+/** Advance exactly one step. Returns false when the flow is finished or has failed,
+ *  which is what both the Next button and Play loop key off. */
+async function stepOnce() {
+  if (S.busy || !S.list || S.i >= S.list.length) return false;
+  S.busy = true;
+  const i = S.i;
+  const li = $(`#s${i}`);
+  li.classList.add("active");
+  li.scrollIntoView({ behavior: "smooth", block: "center" });
+  setControls();
 
-  const list = steps();
-  renderSteps(list);
-  $("#flow").classList.remove("hidden");
-  await readState();
-
-  for (let i = 0; i < list.length; i++) {
-    const li = $(`#s${i}`);
-    li.classList.add("active");
-    li.scrollIntoView({ behavior: "smooth", block: "center" });
-    try {
-      const msg = await list[i].run();
-      li.classList.remove("active");
-      li.classList.add("done");
-      li.querySelector(".out").innerHTML = `<code>${msg}</code>`;
-      await readState();
-    } catch (e) {
-      li.classList.remove("active");
-      li.classList.add("failed");
-      li.querySelector(".out").innerHTML = `<code class="bad">${e.message}</code>`;
-      $("#start").disabled = false;
-      $("#start").textContent = "Start again";
-      S.running = false;
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 420));
+  try {
+    const msg = await S.list[i].run();
+    li.classList.remove("active");
+    li.classList.add("done");
+    li.querySelector(".out").innerHTML = `<code>${msg}</code>`;
+    await readState();
+    if (S.mandate && S.sig) renderMandate();
+  } catch (e) {
+    li.classList.remove("active");
+    li.classList.add("failed");
+    li.querySelector(".out").innerHTML = `<code class="bad">${e.message}</code>`;
+    S.failed = true;
+    S.busy = false;
+    setControls();
+    return false;
   }
 
-  S.running = false;
-  S.done = true;
-  $("#start").disabled = false;
-  $("#start").textContent = "Run it again";
-  renderChecks();
-  $("#checks-section").classList.remove("hidden");
-  $("#checks-section").scrollIntoView({ behavior: "smooth", block: "start" });
+  S.i = i + 1;
+  S.busy = false;
+
+  if (S.i >= S.list.length) {
+    renderChecks();
+    $("#checks-section").classList.remove("hidden");
+  }
+  setControls();
+  return S.i < S.list.length;
+}
+
+async function playRest() {
+  if (S.playing) { S.playing = false; setControls(); return; }
+  S.playing = true;
+  setControls();
+  while (S.playing && (await stepOnce())) {
+    await new Promise((r) => setTimeout(r, 650));
+  }
+  S.playing = false;
+  setControls();
+}
+
+/** One place that decides what every button says and whether it is enabled --
+ *  the flow has enough states (idle, mid-step, paused, playing, failed, done) that
+ *  toggling them at each call site drifts. */
+function setControls() {
+  const started = !!S.list;
+  const done = started && S.i >= S.list.length;
+  const start = $("#start"), next = $("#next"), play = $("#play");
+
+  start.textContent = !started ? "Start" : done || S.failed ? "Run it again" : "Restart";
+  start.disabled = S.busy;
+
+  next.classList.toggle("hidden", !started || done || S.failed);
+  next.disabled = S.busy || S.playing;
+  next.textContent = started && !done ? `Next · ${S.list[S.i].t}` : "Next";
+
+  play.classList.toggle("hidden", !started || done || S.failed);
+  play.disabled = S.busy && !S.playing;
+  play.textContent = S.playing ? "Pause" : "Play the rest";
+
+  $("#progress").textContent = started ? `${Math.min(S.i, S.list.length)} / ${S.list.length}` : "";
+}
+
+async function start() {
+  if (S.busy) return;
+  S.playing = false;
+  S.failed = false;
+  S.key = null;
+  S.mandate = null;
+  S.sig = null;
+  S.i = 0;
+  S.list = steps();
+
+  $("#checks-section").classList.add("hidden");
+  $("#mandate").classList.add("hidden");
+  renderSteps(S.list);
+  $("#flow").classList.remove("hidden");
+  await readState();
+  setControls();
+
+  // Take the first step immediately so Start does something visible, then wait.
+  await stepOnce();
 }
 
 async function boot() {
@@ -587,6 +702,8 @@ async function boot() {
     $("#status").classList.add("ok");
     $("#start").disabled = false;
     $("#start").addEventListener("click", start);
+    $("#next").addEventListener("click", () => stepOnce());
+    $("#play").addEventListener("click", playRest);
     $("#runall").addEventListener("click", runAllChecks);
   } catch (e) {
     $("#status").classList.add("err");
