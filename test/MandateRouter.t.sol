@@ -7,6 +7,8 @@ import {MandateRouter} from "../src/MandateRouter.sol";
 import {MinimalIdentityRegistry, ZeroOwnerRegistry} from "./doubles/MinimalIdentityRegistry.sol";
 import {MockUSDC} from "./doubles/MockUSDC.sol";
 import {MockVault} from "./doubles/MockVault.sol";
+import {ReenteringVault} from "./doubles/ReenteringVault.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
@@ -94,6 +96,46 @@ contract MandateRouterTest is BaseTest {
     function _sign(MandateRouter.Mandate memory m, uint256 pk) internal view returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, _digest(m));
         return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev The reentrancy tests deploy a SECOND router, so their digests carry a
+    /// different `verifyingContract` and cannot be signed with `_sign`.
+    function _signFor(MandateRouter.Mandate memory m, uint256 pk, address verifying)
+        internal
+        view
+        returns (bytes memory)
+    {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, _digestFor(m, verifying));
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev Deploys a hostile vault and a router scoped to it, arms the vault with a
+    /// re-entrant mandate, and returns the OUTER mandate the agent calls with.
+    ///
+    /// The inner mandate names the hostile vault itself as `agent`, deliberately. A
+    /// re-entry under the outer mandate would be turned away at step 1 by
+    /// `msg.sender != m.agent` -- so the test would go green on step 1 and stay green
+    /// with `nonReentrant` deleted, proving nothing. Naming the vault as the agent
+    /// clears step 1, and every later step too, which leaves the guard as the only
+    /// thing standing between the router and unbounded recursion.
+    function _reentrantSetup()
+        internal
+        returns (ReenteringVault hostile, MandateRouter victim, MandateRouter.Mandate memory outer)
+    {
+        hostile = new ReenteringVault(address(usdc));
+        victim = new MandateRouter(address(registry), address(hostile));
+
+        MandateRouter.Mandate memory inner = MandateRouter.Mandate({
+            agentId: AGENT_ID, agent: address(hostile), target: address(hostile), cap: CAP, expiry: expiry, nonce: 8
+        });
+        hostile.arm(victim, inner, _signFor(inner, principalPk, address(victim)));
+
+        outer = MandateRouter.Mandate({
+            agentId: AGENT_ID, agent: agent, target: address(hostile), cap: CAP, expiry: expiry, nonce: 7
+        });
+
+        vm.prank(principal);
+        usdc.approve(address(victim), ALLOWANCE);
     }
 
     /// @dev First four bytes of revert data. The cast reads the leading selector
@@ -562,6 +604,62 @@ contract MandateRouterTest is BaseTest {
         assertEq(vault.balanceOf(address(router)), 0, "router holds no shares");
         assertEq(usdc.balanceOf(agent), 0, "agent holds no asset");
         assertEq(vault.balanceOf(agent), 0, "agent holds no shares");
+    }
+
+    // ------------------------------------------------------------------
+    // The reentrancy guard is load-bearing -- DESIGN risk 6
+    // ------------------------------------------------------------------
+
+    /// @dev Before this test both `nonReentrant` modifiers could be deleted with the
+    /// suite staying 100% green, on the one line DESIGN flags hardest: "load-bearing
+    /// here, not belt-and-braces -- do not drop it".
+    ///
+    /// The vector is narrow by construction. `registry.ownerOf` is `view`, called
+    /// from a `view` internal, so it compiles to STATICCALL -- a malicious registry
+    /// re-entering trips the guard inside its own frame, where the revert is caught
+    /// by `_verify`'s try/catch and converted to `AgentNotRegistered`. That leaves
+    /// the vault and its asset, both immutable from construction, which is exactly
+    /// what this double impersonates.
+    function test_ReentrantVaultOnDepositTripsTheGuard() public containment {
+        (, MandateRouter victim, MandateRouter.Mandate memory m) = _reentrantSetup();
+
+        vm.prank(agent);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        victim.depositFor(m, _signFor(m, principalPk, address(victim)), 100e6);
+    }
+
+    /// @dev The redeem leg. Asserted separately rather than inferred from the deposit
+    /// leg: the two modifiers are two lines and either can be dropped alone.
+    function test_ReentrantVaultOnRedeemTripsTheGuard() public containment {
+        (, MandateRouter victim, MandateRouter.Mandate memory m) = _reentrantSetup();
+
+        vm.prank(agent);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        victim.redeemFor(m, _signFor(m, principalPk, address(victim)), 1);
+    }
+
+    // ------------------------------------------------------------------
+    // The cap check must survive an unbounded `assets`
+    // ------------------------------------------------------------------
+
+    /// @dev `assets` is agent-supplied and unbounded. Written as
+    /// `alreadySpent + assets > m.cap`, the check overflows inside itself under 0.8
+    /// checked arithmetic and hands the caller `Panic(0x11)` (`0x4e487b71`) instead
+    /// of `ExceedsMandate` -- reachable by the legitimate agent holding a legitimate
+    /// mandate, an integrator doing "deposit max" being the obvious trigger, and a
+    /// raw panic selector teaches a merchant nothing.
+    ///
+    /// The prior deposit is load-bearing in the test, not scene-setting: with
+    /// `alreadySpent == 0` there is nothing to overflow, `0 + max` fits, and the
+    /// buggy form returns `ExceedsMandate` too. The defect only shows once budget
+    /// has been consumed.
+    function test_ExceedsMandateSurvivesUnboundedAssets() public containment {
+        _deposit(300e6);
+
+        MandateRouter.Mandate memory m = _mandate();
+        vm.prank(agent);
+        vm.expectRevert(abi.encodeWithSelector(MandateRouter.ExceedsMandate.selector, 700e6, type(uint256).max));
+        router.depositFor(m, _sign(m, principalPk), type(uint256).max);
     }
 
     function test_ConstructorRejectsCodelessAddresses() public containment {
