@@ -32,6 +32,14 @@ contract ContainmentHarness is BaseTest {
         require(containedShare.transfer(containedRouter, amount), "harness: share transfer failed");
     }
 
+    function leakAssetToRouter(uint256 amount) external containment {
+        require(containedAsset.transfer(containedRouter, amount), "harness: asset transfer failed");
+    }
+
+    function leakShareToAgent(uint256 amount) external containment {
+        require(containedShare.transfer(agent, amount), "harness: share transfer failed");
+    }
+
     function noop() external containment {}
 }
 
@@ -145,7 +153,13 @@ contract DoublesTest is Test {
 
     // ---------------------------------------------------------------------
     // Acceptance criterion 6 -- the containment modifier is ARMED, not merely
-    // declared. Three permanent negative tests.
+    // declared. Five permanent negative tests: one per assertion in the modifier,
+    // plus the mandatory-slot guard.
+    //
+    // The modifier asserts 2 holders x 2 tokens. Arming only the diagonal --
+    // asset-to-agent and share-to-router, which is all this file did until PR #1's
+    // re-review -- leaves BaseTest.sol:46 and :49 assertable-but-unasserted:
+    // deleting either one left the entire suite green.
     // ---------------------------------------------------------------------
 
     /// @dev Deploys the harness, funds it with both legs, and wires its slots.
@@ -160,9 +174,20 @@ contract DoublesTest is Test {
         usdc.mint(address(this), 10e6);
         usdc.approve(address(vault), 10e6);
         vault.deposit(10e6, address(harness));
+
+        // The four negative tests below catch their revert with a BARE
+        // `vm.expectRevert()`, which cannot distinguish the containment assertion
+        // from an `ERC20InsufficientBalance` raised because this funding broke --
+        // a permissioned `MockUSDC.mint`, a first-deposit rounding change in
+        // `MockVault`. Without these two lines the arming evidence could evaporate
+        // silently while the suite stayed green. Asserted here rather than by
+        // naming the expected revert data, which would couple the tests to
+        // Foundry's assertion-message format.
+        assertEq(usdc.balanceOf(address(harness)), 10e6, "harness: asset leg unfunded");
+        assertGt(vault.balanceOf(address(harness)), 0, "harness: share leg unfunded");
     }
 
-    /// (a) leaks the ASSET to the agent.
+    /// (a) leaks the ASSET to the agent, arming `BaseTest.sol:45`.
     function test_ContainmentCatchesAssetLeakToAgent() public {
         ContainmentHarness harness = _armedHarness();
 
@@ -170,10 +195,7 @@ contract DoublesTest is Test {
         harness.leakAssetToAgent(1);
     }
 
-    /// (b) leaks ONE SHARE to the router -- the only test that arms the share leg and
-    /// the router leg at all. Without it, a modifier that checked only assets on only
-    /// the agent would pass every test in this wish while asserting a quarter of what
-    /// it claims.
+    /// (b) leaks ONE SHARE to the router, arming `BaseTest.sol:50`.
     function test_ContainmentCatchesShareLeakToRouter() public {
         ContainmentHarness harness = _armedHarness();
 
@@ -181,7 +203,27 @@ contract DoublesTest is Test {
         harness.leakShareToRouter(1);
     }
 
-    /// (c) leaves `agent` unset. address(0) has trivially zero balances, so without
+    /// (c) leaks the ASSET to the router -- the non-custody invariant itself, and the
+    /// single most load-bearing line in the fixture. Nothing armed
+    /// `BaseTest.sol:49` before this test existed: `ContainmentHarness` exposed only
+    /// the diagonal (asset-to-agent, share-to-router), so deleting that line left the
+    /// entire suite green.
+    function test_ContainmentCatchesAssetLeakToRouter() public {
+        ContainmentHarness harness = _armedHarness();
+
+        vm.expectRevert();
+        harness.leakAssetToRouter(1);
+    }
+
+    /// (d) leaks a SHARE to the agent -- the fourth leg, arming `BaseTest.sol:46`.
+    function test_ContainmentCatchesShareLeakToAgent() public {
+        ContainmentHarness harness = _armedHarness();
+
+        vm.expectRevert();
+        harness.leakShareToAgent(1);
+    }
+
+    /// (e) leaves `agent` unset. address(0) has trivially zero balances, so without
     /// the mandatory-slot guard this would pass while checking nobody.
     function test_ContainmentRejectsUnsetAgent() public {
         ContainmentHarness harness = new ContainmentHarness();
@@ -191,8 +233,8 @@ contract DoublesTest is Test {
         harness.noop();
     }
 
-    /// @dev The positive control for (a)-(c): a correctly wired, non-leaking harness
-    /// passes. Without this, all three negative tests would still pass against a
+    /// @dev The positive control for (a)-(e): a correctly wired, non-leaking harness
+    /// passes. Without this, all five negative tests would still pass against a
     /// modifier that unconditionally reverted.
     function test_ContainmentPassesWhenNothingLeaks() public {
         ContainmentHarness harness = _armedHarness();
