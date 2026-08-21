@@ -4,17 +4,52 @@
 
 Gate exited **0**. Command run verbatim from WISH.md group 3 Validation.
 
+**Re-run on 2026-08-20 after PR #3's re-review**, with raw forge output rather than
+the hand-written paraphrase this note previously carried — and with the count
+corrected. `forge fmt --check` ok; then:
+
 ```
-forge fmt --check                                          ok
-forge test --match-contract AllowlistedERC4626Test -vv     13 passed, 0 failed
+Ran 14 tests for test/AllowlistedERC4626.t.sol:AllowlistedERC4626Test
+[PASS] test_AssetIsSixDecimalsAndSharesMatch() (gas: 32761)
+[PASS] test_DeAllowlistedHolderCanStillRedeem() (gas: 127478)
+[PASS] test_DeAllowlistingClosesTheGate() (gas: 40984)
+[PASS] test_DepositToAgentRevertsNotAllowlisted() (gas: 33612)
+[PASS] test_DepositToPrincipalFromOutsiderSucceeds() (gas: 128504)
+[PASS] test_GateKeysOnReceiverNotCaller() (gas: 93543)
+[PASS] test_MaxDepositAndMaxMintOpenForAllowlistedReceiver() (gas: 39838)
+[PASS] test_MintIsGatedIdenticallyAndRevertIsOurs() (gas: 35486)
+[PASS] test_MintToAllowlistedReceiverSucceeds() (gas: 120808)
+[PASS] test_RenounceOwnershipIsDisabledEvenForTheOwner() (gas: 61092)
+[PASS] test_RevertIsOursEvenThoughMaxDepositReturnsZero() (gas: 35533)
+[PASS] test_SetAllowlistedEmitsAndOpensTheGate() (gas: 151322)
+[PASS] test_SetAllowlistedIsOwnerOnly() (gas: 32591)
+[PASS] test_VaultHoldsAssetsIdle() (gas: 124418)
+Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 9.45ms (20.53ms CPU time)
+
+Ran 1 test suite in 16.67ms (9.45ms CPU time): 14 tests passed, 0 failed, 0 skipped (14 total tests)
 ```
 
-The reported count is **13, not zero** — checked explicitly, because
+The reported count is **14, not zero** — checked explicitly, because
 `forge test` exits 0 on a zero-match run and the contract name is what
 `--match-contract` selects on. A rename would have turned this gate green while
 running nothing.
 
-Full suite on this branch also green: **23 passed** (10 group 1 + 13 group 3).
+**Correction from PR #3's re-review.** This note said 13 in four places. `1466833`
+added `test_RenounceOwnershipIsDisabledEvenForTheOwner` and the note was not
+refreshed, so every figure here disagreed with a static count of the tree it
+describes. The count above is the run, not arithmetic.
+
+Full suite on this branch also green:
+
+```
+Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 1.37ms (2.14ms CPU time)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 1.60ms (4.46ms CPU time)
+Ran 2 test suites in 6.08ms (2.97ms CPU time): 26 tests passed, 0 failed, 0 skipped (26 total tests)
+```
+
+**26 = 12 group 1 + 14 group 3.** Group 1's figure moved too: PR #1's re-review found
+the `containment` modifier armed on 2 of its 4 legs, and the two tests that close that
+gap land in `test/doubles/Doubles.t.sol`.
 
 Branched off `wish/agent-mandate-vault-gate`, not off group 2 — group 3
 `depends-on: 1` only. `src/` contained nothing at branch time, so the isolation
@@ -97,7 +132,7 @@ the pairing rather than only the outcome.
 | `asset()` is 6-decimal and `decimals()` returns 6 | `test_AssetIsSixDecimalsAndSharesMatch` — offset 0, so shares are 6dp here, unlike `mwUSDC`'s 18 |
 | Escape hatch evaluated | Taken, recorded above |
 
-All 13 tests apply the `containment` modifier (verified by grep).
+All 14 tests apply the `containment` modifier (verified by grep).
 `containedRouter` is left unset — the fixture's one legitimate skip-on-unset
 case, since group 3 deploys no router.
 
