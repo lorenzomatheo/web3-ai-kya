@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MandateRouter — live on Ethereum Sepolia</title>
+<style>
+:root {
+  --bg: #fbfaf8; --panel: #ffffff; --line: #e6e2dc;
+  --ink: #1a1815; --muted: #6f6a63; --faint: #9a938a;
+  --accent: #b4530a; --good: #1f7a4d; --bad: #b02a1f;
+  --principal: #2f5fa8; --agent: #8a4fbd; --router: #b4530a; --vault: #1f7a4d;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14130f; --panel: #1c1a16; --line: #2f2b25;
+    --ink: #ece7df; --muted: #a39c92; --faint: #7a736a;
+    --accent: #e2872f; --good: #4ec98a; --bad: #f0705f;
+    --principal: #7aa7e8; --agent: #c396ea; --router: #e2872f; --vault: #4ec98a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14130f; --panel: #1c1a16; --line: #2f2b25;
+  --ink: #ece7df; --muted: #a39c92; --faint: #7a736a;
+  --accent: #e2872f; --good: #4ec98a; --bad: #f0705f;
+  --principal: #7aa7e8; --agent: #c396ea; --router: #e2872f; --vault: #4ec98a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: .92em; }
+.hidden { display: none; }
+.muted { color: var(--muted); }
+.good { color: var(--good); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+
+/* hero */
+header { padding: 72px 0 8px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--faint); margin-bottom: 20px;
+}
+h1 {
+  font-size: clamp(30px, 5.2vw, 52px); line-height: 1.1; letter-spacing: -.022em;
+  margin: 0 0 20px; font-weight: 620; max-width: 17ch;
+}
+h1 em { font-style: normal; color: var(--accent); }
+.lede { font-size: clamp(16px, 2vw, 19px); color: var(--muted); max-width: 62ch; margin: 0 0 28px; }
+.lede strong { color: var(--ink); font-weight: 600; }
+
+#live-badge {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 15px; background: var(--panel);
+}
+#live-badge.ok { color: var(--ink); }
+#live-badge.err { color: var(--bad); border-color: var(--bad); }
+.dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent);
+}
+
+/* sections */
+section { margin-top: 72px; }
+h2 {
+  font-size: 13px; font-family: var(--mono); letter-spacing: .13em;
+  text-transform: uppercase; color: var(--faint); font-weight: 600;
+  margin: 0 0 6px; padding-bottom: 14px; border-bottom: 1px solid var(--line);
+}
+.sec-lede { font-size: 17px; color: var(--muted); max-width: 66ch; margin: 20px 0 28px; }
+.sec-lede strong { color: var(--ink); font-weight: 600; }
+
+/* cards */
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 20px;
+}
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); }
+
+.actor { border-top: 3px solid var(--line); }
+.actor.principal { border-top-color: var(--principal); }
+.actor.agent { border-top-color: var(--agent); }
+.actor.router { border-top-color: var(--router); }
+.actor.vault { border-top-color: var(--vault); }
+.actor .role { font-weight: 640; font-size: 16px; }
+.actor .tag { color: var(--faint); font-size: 13px; margin-bottom: 10px; }
+.actor .addr { font-family: var(--mono); font-size: 12px; text-decoration: none; }
+.actor dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 14px 0 0; font-size: 13.5px; }
+.actor dt { color: var(--muted); }
+.actor dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12.5px; }
+
+/* proof */
+.tx {
+  display: grid; grid-template-columns: 86px 1fr auto auto; gap: 16px; align-items: center;
+  padding: 13px 16px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); margin-bottom: 8px; font-size: 14px;
+}
+.kind {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  padding: 3px 8px; border-radius: 5px; text-align: center;
+  background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good);
+}
+.kind.revoke { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.tx .blk, .tx a { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.tx a { color: var(--accent); text-decoration: none; }
+.note {
+  margin-top: 18px; padding: 16px 18px; border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 0 8px 8px 0; font-size: 14.5px;
+}
+
+/* steps */
+ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
+ol.steps li {
+  counter-increment: s; position: relative; padding: 11px 0 11px 46px;
+  border-bottom: 1px solid var(--line); font-size: 14.5px;
+}
+ol.steps li::before {
+  content: counter(s); position: absolute; left: 0; top: 11px;
+  width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line);
+  display: grid; place-items: center; font-family: var(--mono); font-size: 12px; color: var(--muted);
+}
+ol.steps li b { font-weight: 620; }
+ol.steps li .err { font-family: var(--mono); font-size: 12.5px; color: var(--bad); }
+
+/* refusals */
+.refusal { display: flex; flex-direction: column; }
+.rhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.step {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--faint);
+}
+button.run {
+  font: inherit; font-size: 12.5px; padding: 4px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;
+}
+button.run:hover { border-color: var(--accent); color: var(--accent); }
+.refusal h3 { margin: 0 0 7px; font-size: 15.5px; font-weight: 620; }
+.refusal p { margin: 0 0 12px; font-size: 13.8px; color: var(--muted); }
+.refusal p.hist {
+  font-size: 12.5px; color: var(--faint); border-left: 2px solid var(--line);
+  padding-left: 11px;
+}
+.result {
+  margin-top: auto; padding: 11px 13px; border-radius: 8px; font-size: 13px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+}
+.result code { word-break: break-all; }
+.result.reverted { background: color-mix(in srgb, var(--good) 12%, transparent); }
+.result.reverted code { color: var(--good); font-weight: 600; }
+.result.wrong { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.result.pruned { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.result.pruned code { color: var(--accent); }
+.result.wrong code { color: var(--bad); }
+.tick { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+#runall {
+  font: inherit; font-size: 13px; padding: 8px 18px; border-radius: 999px;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer;
+}
+
+footer {
+  margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line);
+  font-size: 13px; color: var(--faint);
+}
+#fatal { border-color: var(--bad); }
+@media (max-width: 620px) {
+  .tx { grid-template-columns: 1fr; gap: 6px; }
+  .actor dl { grid-template-columns: 1fr auto; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">MandateRouter · live on Ethereum Sepolia</div>
+  <h1>Your AI agent needs to move your money. <em>Don't give it your money.</em></h1>
+  <p class="lede">
+    An agent that manages a position needs to deposit and redeem on your behalf. The usual
+    answer is to fund its wallet and hope. This one proves, on-chain, that the agent acts
+    <strong>for a named human, within limits that human signed</strong> — while the agent's
+    own balance stays at zero, permanently.
+  </p>
+  <div id="live-badge">connecting…</div>
+</header>
+
+<div id="fatal" class="card hidden" style="margin-top:32px">
+  <strong>The page could not read the chain.</strong>
+  <p class="muted" style="margin:8px 0 0">
+    <code id="fatal-msg"></code>
+  </p>
+  <p class="muted" style="margin:10px 0 0; font-size:13.5px">
+    Everything here is read live from a public RPC — nothing is cached in the page — so an
+    unreachable or rate-limited endpoint means there is nothing to show. Try again, or point
+    <code>CFG.rpcUrl</code> in <code>app.js</code> at another Ethereum Sepolia endpoint.
+  </p>
+</div>
+
+<div id="content" class="hidden">
+
+<section>
+  <h2>The cast</h2>
+  <p class="sec-lede">
+    Four addresses, read from the chain just now. The one to watch is
+    <strong>the agent</strong>: it is the only party actually sending the transactions, and
+    it holds nothing before, during, or after.
+  </p>
+  <div id="actors" class="grid"></div>
+</section>
+
+<section>
+  <h2>It works</h2>
+  <p class="sec-lede">
+    The agent deposited on the principal's behalf and redeemed the position back to them.
+    Every transaction below was sent by <strong>the agent's key</strong>; every asset
+    landed at <strong>the principal's address</strong>.
+  </p>
+  <div id="proof"></div>
+  <div class="note" id="spent-note"></div>
+</section>
+
+<section>
+  <h2>What it checks</h2>
+  <p class="sec-lede">
+    Seven checks run before a single token moves, in this order, and each one has its own
+    revert reason. No caller ever receives a bare selector or a library's error.
+  </p>
+  <ol class="steps">
+    <li><b>Only the named agent may call.</b> <span class="err">NotAgent</span></li>
+    <li><b>The mandate is scoped to exactly one vault.</b> <span class="err">WrongVault</span></li>
+    <li><b>The mandate has not expired</b> — enforced on the way out too. <span class="err">MandateExpired</span></li>
+    <li><b>The principal is derived from the ERC-8004 registry</b>, never taken from the mandate. <span class="err">AgentNotRegistered</span></li>
+    <li><b>The recovered signer is that principal.</b> <span class="err">InvalidSignature</span></li>
+    <li><b>The principal has not revoked it.</b> <span class="err">MandateRevoked</span></li>
+    <li><b>The deposit fits the cumulative cap.</b> <span class="err">ExceedsMandate</span></li>
+  </ol>
+</section>
+
+<section>
+  <h2>What it refuses</h2>
+  <p class="sec-lede">
+    These are not screenshots. Each button sends a real <code>eth_call</code> to Ethereum
+    Sepolia and prints the revert data the contract returns, decoded with its operands.
+    <strong>The chain is answering, live, in your browser.</strong>
+  </p>
+  <p style="margin:-12px 0 24px"><button id="runall">Run all eight</button></p>
+  <div id="refusals" class="grid"></div>
+</section>
+
+<footer>
+  Seeded with one router address and a start block. The vault, the registry, the asset, the
+  transaction hashes and the signed mandate itself are all read back off the chain — the
+  mandate and its signature come out of the deposit transaction's own calldata.
+  No dependencies, no build step, no server.
+</footer>
+
+</div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
