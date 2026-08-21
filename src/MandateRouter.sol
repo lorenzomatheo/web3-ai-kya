@@ -154,9 +154,19 @@ contract MandateRouter is EIP712, ReentrancyGuard {
         (address principal, bytes32 digest, bytes32 key) = _verify(m, sig);
 
         // Step 7. Reports remaining headroom rather than echoing the static cap.
+        //
+        // Written as a subtraction on the LEFT of the comparison, never as
+        // `alreadySpent + assets > m.cap`. `assets` is agent-supplied and unbounded,
+        // so the addition form overflows under 0.8 checked arithmetic inside the
+        // check itself and hands a legitimate caller `Panic(0x11)` instead of this
+        // error -- the one thing the design calls the product. The subtraction cannot
+        // underflow: `spent[key]` is only ever written below, as a value this same
+        // check has already bounded by `m.cap`, and `m.cap` is fixed for a given
+        // `key` because the key is the EIP-712 digest, which commits to `cap`.
         uint256 alreadySpent = spent[key];
-        if (alreadySpent + assets > m.cap) {
-            revert ExceedsMandate(m.cap - alreadySpent, assets);
+        uint256 remaining = m.cap - alreadySpent;
+        if (assets > remaining) {
+            revert ExceedsMandate(remaining, assets);
         }
         uint256 spentTotal = alreadySpent + assets;
 
