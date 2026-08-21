@@ -4,11 +4,42 @@
 
 Gate exited **0**. Command run verbatim from WISH.md group 4 Validation.
 
+**Re-run on 2026-08-20 after PR #4's re-review**, with raw forge output rather than
+the hand-written paraphrase this note previously carried. `forge` 1.7.1, live
+`BASE_RPC_URL`, so the fork leg genuinely executed against pinned Base block
+50,000,000.
+
 ```
-forge fmt --check                                       ok
-FOUNDRY_PROFILE=fork forge test --match-path test/fork/**   4 passed
-  grep 'Ran [1-9]+ tests for .../MandateRouterFork.t.sol'   matched
-forge test (full local suite)                          62 passed
+Ran 1 test for test/fork/ProfileGuard.t.sol:ProfileGuardTest
+[PASS] test_RunsOnlyUnderForkProfile() (gas: 4459)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 6.88ms (1.79ms CPU time)
+
+Ran 3 tests for test/fork/MandateRouterFork.t.sol:MandateRouterForkTest
+[PASS] test_RoundTripReturnsAssetsWithinTolerance() (gas: 531018)
+Logs:
+  round-trip loss (USDC wei): 1
+
+[PASS] test_RoundTripStillConsumesBudgetOnRealVault() (gas: 524411)
+[PASS] test_RouterDepositsIntoRealMwUSDC() (gas: 474341)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 12.26ms (10.55ms CPU time)
+
+Ran 2 test suites in 204.62ms (19.14ms CPU time): 4 tests passed, 0 failed, 0 skipped (4 total tests)
+```
+
+The suite-named grep matched `Ran 3 tests for test/fork/MandateRouterFork.t.sol:`.
+Then the full local suite:
+
+```
+Ran 14 tests for test/AllowlistedERC4626.t.sol:AllowlistedERC4626Test
+Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 3.63ms (1.00ms CPU time)
+Ran 4 tests for test/OwnershipIsolation.t.sol:OwnershipIsolationTest
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 3.63ms (5.78ms CPU time)
+Ran 38 tests for test/MandateRouter.t.sol:MandateRouterTest
+Suite result: ok. 38 passed; 0 failed; 0 skipped; finished in 4.03ms (14.50ms CPU time)
+Ran 12 tests for test/doubles/Doubles.t.sol:DoublesTest
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 4.04ms (6.68ms CPU time)
+
+Ran 4 test suites in 6.40ms (15.33ms CPU time): 68 tests passed, 0 failed, 0 skipped (68 total tests)
 ```
 
 Both guards in that command did real work and neither is decoration:
@@ -18,7 +49,14 @@ status and a failing fork suite would report green; and the grep naming
 `test/fork/` and a bare count would be satisfied by the guard alone while the
 mwUSDC suite was renamed, misplaced, or never selected.
 
-Local total 62 = 10 doubles + 35 router + 13 vault + **4 ownership isolation**.
+Local total **68 = 12 doubles + 38 router + 14 vault + 4 ownership isolation**.
+
+**Correction from PR #4's re-review.** This note said 62, and 13 in the audit table
+below. Both were stale: `1466833` added a 14th vault test without the note being
+refreshed. Three further figures moved after that review — the router gained a
+`Panic(0x11)` regression test and two reentrancy tests, and the doubles gained the two
+containment legs that were unarmed. Every figure above is now read off the run
+rather than recomputed.
 
 ## Branch shape
 
@@ -75,8 +113,8 @@ that deploy a router.
 
 | File | Tests | All carry `containment` | `agent` / `containedAsset` / `containedShare` | `containedRouter` |
 |---|---|---|---|---|
-| `test/MandateRouter.t.sol` | 35 | 35/35 | assigned | assigned (deploys one) |
-| `test/AllowlistedERC4626.t.sol` | 13 | 13/13 | assigned | **unset — correct**, deploys no router |
+| `test/MandateRouter.t.sol` | 38 | 38/38 | assigned | assigned (deploys one) |
+| `test/AllowlistedERC4626.t.sol` | 14 | 14/14 | assigned | **unset — correct**, deploys no router |
 | `test/OwnershipIsolation.t.sol` | 4 | 4/4 | assigned | assigned (deploys one) |
 | `test/fork/MandateRouterFork.t.sol` | 3 | 3/3 | assigned | assigned (deploys one) |
 
@@ -89,6 +127,31 @@ negative test, precisely because it is skip-on-unset by design and therefore the
 only slot that cannot fail loudly — a file that applies the modifier but forgets
 it would pass the router half of the invariant while checking nobody.
 
+### Correction from PR #4's re-review: this audit certified "armed" and could not
+
+The application count above was right. **"Armed" was not.** `BaseTest.sol:45-51`
+asserts 2 holders × 2 tokens, and `ContainmentHarness` exposed only the diagonal —
+`leakAssetToAgent` and `leakShareToRouter`. Deleting `BaseTest.sol:49`, the
+router-holds-no-USDC assertion and the non-custody invariant itself, left the entire
+suite green.
+
+**The audit's method is what missed it.** Counting applications of the modifier
+measures reach, not strength; it cannot distinguish a modifier asserting four things
+from one asserting two, because both are applied identically at every call site. The
+gap only surfaces by reading `BaseTest.sol` against the negative tests in
+`test/doubles/Doubles.t.sol` — the one file this audit scopes out.
+
+Fixed in group 1, since that is where both files live: `ContainmentHarness` gains
+`leakAssetToRouter` and `leakShareToAgent`, and removing any one of `BaseTest.sol:45`,
+`:46`, `:49`, `:50` now turns exactly one test red. The property was never
+unprotected in practice — `test_DepositSucceedsAndCreditsPrincipal`,
+`test_RouterAndAgentHoldNothingAfterRoundTrip` and both fork tests assert it directly
+— but that is precisely the "proven rather than illustrated" distinction the wish was
+written to eliminate.
+
+**Method note for any future audit of this kind:** an invariant fixture must be
+audited by mutating the fixture, not by counting its call sites.
+
 ## Acceptance criteria
 
 | Criterion | Evidence |
@@ -97,7 +160,7 @@ it would pass the router half of the invariant while checking nobody.
 | Round trip within an explicit stated tolerance | `test_RoundTripReturnsAssetsWithinTolerance` — 10 wei bound, 1 wei actual, logged |
 | A spends 800 of 1,000; `agentId` → B; B's byte-identical mandate deposits 1,000: accepted | `test_OwnerASpendingDoesNotChargeOwnerB` |
 | A revokes; `agentId` → B; B's byte-identical struct accepted | `test_OwnerARevocationDoesNotBlacklistOwnerB` |
-| Agent and router hold zero across **every** router- or vault-deploying test | The audit table above; 55 in-scope tests, all applying an armed modifier |
+| Agent and router hold zero across **every** router- or vault-deploying test | The audit table above; **59** in-scope tests, all applying the modifier — and the modifier is now armed on all four of its legs (see below) |
 | Prior owner still redeems directly after transfer | `test_PriorOwnerStillRedeemsDirectlyAfterTransfer` |
 | Risk-12 test passes | `test_Risk12_MandateReachesSharesItDidNotCreate` — principal deposits directly, agent redeems under a same-principal different-`nonce` mandate through which nothing was routed. **Written to pass**, so a later `sharesMinted` bound has a test to invert rather than a paragraph to reinterpret |
 
@@ -113,6 +176,13 @@ and faucets rate-limit:
 
 - **Gas ETH** on Base Sepolia for ~20 transactions (two deployments, a registry
   `register()`, approvals, and the eleven demo transactions).
+  **The `register()` must be broadcast under `PRINCIPAL_PRIVATE_KEY`, not the
+  deployer's** — or registered by the deployer and transferred to the principal in
+  the same script. `register()` mints to `msg.sender`, so a deployer-only broadcast
+  makes `ownerOf(agentId)` the deployer and every principal-signed mandate then dies
+  at step 5 with `InvalidSignature`. Do not read this list as a to-do without that
+  attribution; the full constraint, including the closing `require`, is in
+  [`group-5-constraints.md`](group-5-constraints.md).
 - **Test USDC** (`0x036CbD53…CF7e`) for demo transaction 1's 500-USDC deposit.
 - **`BASESCAN_API_KEY`** — not funding at all, but `--verify` reads it through
   the `[etherscan]` table, and "deployed **and verified**" is one of the wish's
