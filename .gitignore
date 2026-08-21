@@ -8,3 +8,6 @@ broadcast/
 
 # Node
 node_modules/
+
+# regenerated on every local-demo run
+local-demo/artifacts.json

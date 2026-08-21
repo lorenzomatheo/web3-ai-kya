@@ -9,7 +9,8 @@
     "dryrun": "./scripts/dryrun.sh",
     "typecheck": "tsc --noEmit",
     "demo-2": "tsx scripts/demo-2.ts",
-    "demo:web": "python3 -m http.server 8080 --directory demo"
+    "demo:web": "python3 -m http.server 8080 --directory demo",
+    "local-demo": "./scripts/local-demo.sh"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

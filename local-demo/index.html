@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MandateRouter — built live on an empty chain</title>
+<style>
+:root {
+  --bg: #fbfaf8; --panel: #ffffff; --line: #e6e2dc;
+  --ink: #1a1815; --muted: #6f6a63; --faint: #9a938a;
+  --accent: #b4530a; --good: #1f7a4d; --bad: #b02a1f; --agent: #8a4fbd;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14130f; --panel: #1c1a16; --line: #2f2b25;
+    --ink: #ece7df; --muted: #a39c92; --faint: #7a736a;
+    --accent: #e2872f; --good: #4ec98a; --bad: #f0705f; --agent: #c396ea;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14130f; --panel: #1c1a16; --line: #2f2b25;
+  --ink: #ece7df; --muted: #a39c92; --faint: #7a736a;
+  --accent: #e2872f; --good: #4ec98a; --bad: #f0705f; --agent: #c396ea;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px 96px; }
+code { font-family: var(--mono); font-size: .9em; }
+.hidden { display: none; }
+.muted { color: var(--muted); }
+.good { color: var(--good); } .bad { color: var(--bad); }
+
+header { padding: 68px 0 8px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--faint); margin-bottom: 18px; }
+h1 { font-size: clamp(28px, 4.8vw, 46px); line-height: 1.12; letter-spacing: -.022em;
+  margin: 0 0 18px; font-weight: 620; max-width: 19ch; }
+h1 em { font-style: normal; color: var(--accent); }
+.lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--muted); max-width: 64ch; margin: 0 0 26px; }
+.lede strong { color: var(--ink); font-weight: 600; }
+
+#status { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono);
+  font-size: 12.5px; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 7px 15px; background: var(--panel); }
+#status.ok { color: var(--ink); } #status.err { color: var(--bad); border-color: var(--bad); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+
+.controls { margin: 28px 0 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+button { font: inherit; cursor: pointer; }
+#start { font-size: 15px; padding: 11px 26px; border-radius: 999px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; font-weight: 560; }
+#start:disabled { opacity: .5; cursor: default; }
+
+section { margin-top: 64px; }
+h2 { font-size: 13px; font-family: var(--mono); letter-spacing: .13em; text-transform: uppercase;
+  color: var(--faint); font-weight: 600; margin: 0 0 6px; padding-bottom: 13px;
+  border-bottom: 1px solid var(--line); }
+.sec-lede { font-size: 16.5px; color: var(--muted); max-width: 66ch; margin: 18px 0 26px; }
+.sec-lede strong { color: var(--ink); font-weight: 600; }
+
+/* live state */
+#state { position: sticky; top: 0; z-index: 5; padding: 14px 0;
+  background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); }
+.sgrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.sbox { border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; background: var(--panel); }
+.sbox h4 { margin: 0 0 9px; font-size: 12.5px; font-weight: 640; letter-spacing: .02em; }
+.sbox h4 em { font-style: normal; color: var(--agent); font-weight: 500; font-size: 11.5px; }
+.sbox.agent { border-color: color-mix(in srgb, var(--agent) 40%, var(--line)); }
+.sbox div { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 2px 0; }
+.sbox span { color: var(--muted); }
+.sbox b { font-family: var(--mono); font-weight: 500; font-size: 12px; }
+.sbox b.good { color: var(--good); font-weight: 600; }
+.sbox b.bad { color: var(--bad); font-weight: 600; }
+
+/* flow */
+ol#flow { list-style: none; padding: 0; margin: 0; }
+.step { display: grid; grid-template-columns: 34px 1fr; gap: 16px; padding: 15px 0;
+  border-bottom: 1px solid var(--line); opacity: .42; transition: opacity .25s; }
+.step.active, .step.done, .step.failed { opacity: 1; }
+.num { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
+  display: grid; place-items: center; font-family: var(--mono); font-size: 12px;
+  color: var(--muted); margin-top: 2px; }
+.step.active .num { border-color: var(--accent); color: var(--accent); }
+.step.done .num { border-color: var(--good); color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.step.failed .num { border-color: var(--bad); color: var(--bad); }
+.step .t { font-weight: 620; font-size: 15px; }
+.step .d { color: var(--muted); font-size: 13.8px; margin-top: 2px; }
+.step .out:not(:empty) { margin-top: 9px; padding: 8px 12px; border-radius: 7px;
+  background: color-mix(in srgb, var(--good) 11%, transparent); font-size: 12.5px; }
+.step .out code { color: var(--good); font-weight: 560; }
+.step .out code.bad { color: var(--bad); }
+.step.active .out:not(:empty) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+/* checks */
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.check { display: flex; flex-direction: column; }
+.chead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
+.stp { font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--faint); }
+button.run { font-size: 12.5px; padding: 4px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink); }
+button.run:hover { border-color: var(--accent); color: var(--accent); }
+.check h3 { margin: 0 0 6px; font-size: 15px; font-weight: 620; }
+.check p { margin: 0 0 12px; font-size: 13.5px; color: var(--muted); }
+.res { margin-top: auto; padding: 10px 12px; border-radius: 8px; font-size: 12.5px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.res code { word-break: break-all; }
+.res.ok { background: color-mix(in srgb, var(--good) 12%, transparent); }
+.res.ok code { color: var(--good); font-weight: 600; }
+.res.no { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.res.no code { color: var(--bad); }
+.tick { font-size: 11px; color: var(--muted); white-space: nowrap; }
+#runall { font-size: 13px; padding: 8px 18px; border-radius: 999px;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+
+footer { margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--line);
+  font-size: 13px; color: var(--faint); }
+#fatal { border-color: var(--bad); margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">local demo · a chain with nothing on it</div>
+  <h1>Watch it get built, then <em>watch it refuse</em>.</h1>
+  <p class="lede">
+    Everything starts empty. Press Start and four contracts get deployed, an agent
+    identity is linked to a human, a mandate is signed off-chain, and the agent moves
+    money it never holds — <strong>then hand the same setup eight things it should
+    refuse</strong>, and it refuses all eight by name.
+  </p>
+  <div id="status">connecting to anvil…</div>
+  <div class="controls">
+    <button id="start" disabled>Start</button>
+    <span class="muted" style="font-size:13.5px">~6 seconds · every step is a real transaction</span>
+  </div>
+</header>
+
+<div id="fatal" class="card hidden">
+  <strong>Nothing to talk to.</strong>
+  <p class="muted" style="margin:8px 0 0"><code id="fatal-msg"></code></p>
+  <p class="muted" style="margin:10px 0 0; font-size:13.5px">
+    This page drives a local chain and deploys onto it, so it needs one running. Start
+    both with <code>pnpm local-demo</code>, then reload.
+  </p>
+</div>
+
+<div id="state"></div>
+
+<section>
+  <h2>The flow</h2>
+  <ol id="flow" class="hidden"></ol>
+</section>
+
+<section id="checks-section" class="hidden">
+  <h2>What it refuses</h2>
+  <p class="sec-lede">
+    Seven checks run before a single token moves, and the vault holds an eighth of its
+    own. Each button provokes the real thing against the contracts you just watched
+    being deployed — <strong>these are live calls, not recordings</strong>.
+  </p>
+  <p style="margin:-10px 0 22px"><button id="runall">Run all eight</button></p>
+  <div id="checks" class="grid"></div>
+</section>
+
+<footer>
+  Fresh chain, no fork, no network. The page deploys the same contracts the test suite
+  covers, straight from forge's build output. anvil signs the mandate as the principal
+  (<code>eth_signTypedData_v4</code>) and the router computes its own digest, so there
+  is no cryptography and no dependency in this page at all.
+</footer>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
