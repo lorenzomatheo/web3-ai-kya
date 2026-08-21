@@ -31,11 +31,16 @@ fork_block_number = 50000000
 [rpc_endpoints]
 base = "${BASE_RPC_URL}"
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+# Group 5 may target Ethereum Sepolia instead; TARGET_RPC_URL selects which.
+sepolia = "${TARGET_RPC_URL}"
 
 # Group 5's `forge script --verify` resolves its key from this table or from
 # ETHERSCAN_API_KEY, never from a bare BASESCAN_API_KEY in the environment.
 [etherscan]
 base_sepolia = { key = "${BASESCAN_API_KEY}", chain = 84532 }
+# Same key: under Etherscan's V2 unified API one etherscan.io key serves every
+# supported chain, and legacy per-explorer keys are deprecated.
+sepolia = { key = "${BASESCAN_API_KEY}", chain = 11155111 }
 
 [fmt]
 line_length = 120

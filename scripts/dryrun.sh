@@ -15,14 +15,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 set -a && . ./.env && set +a
-: "${BASE_SEPOLIA_RPC_URL:?BASE_SEPOLIA_RPC_URL must be set in .env}"
+# Forks whichever chain group 5 targets, so the rehearsal rehearses the real thing.
+FORK_RPC="${TARGET_RPC_URL:-${BASE_SEPOLIA_RPC_URL:-}}"
+FORK_CHAIN="${TARGET_CHAIN_ID:-84532}"
+: "${FORK_RPC:?set TARGET_RPC_URL (or BASE_SEPOLIA_RPC_URL) in .env}"
 
-# This rehearsal forks Base Sepolia specifically, so its two external addresses are
-# known rather than configurable. Defaulted here so a .env predating group 5 still
-# works; a value already in .env wins, which is what lets the same script rehearse
-# against a different registry deployment.
+# Defaulted for Base Sepolia so a .env predating group 5 still works; a value
+# already in .env always wins, which is what lets this rehearse another chain.
+# The ERC-8004 registry happens to sit at the same address on both Sepolias --
+# it was deployed deterministically -- but USDC does not.
 : "${REGISTRY_ADDRESS:=0x8004A818BFB912233c491871b3d84c89A494BD9e}"
-: "${USDC_ADDRESS:=0x036CbD53842c5426634e7929541eC2318f3dCF7e}"
+if [[ -z "${USDC_ADDRESS:-}" ]]; then
+  case "$FORK_CHAIN" in
+    84532)    USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e ;;
+    11155111) USDC_ADDRESS=0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 ;;
+    *) echo "no default USDC_ADDRESS for chain $FORK_CHAIN; set it in .env"; exit 1 ;;
+  esac
+fi
 export REGISTRY_ADDRESS USDC_ADDRESS
 
 PORT="${DRYRUN_PORT:-8545}"
@@ -52,12 +61,12 @@ AGENT=$(cast wallet address "$AGENT_PRIVATE_KEY")
 cleanup() { [[ -n "${ANVIL_PID:-}" ]] && kill "$ANVIL_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-echo "=== booting anvil, forking Base Sepolia ==="
+echo "=== booting anvil, forking chain $FORK_CHAIN ==="
 # --chain-id is mandatory, not tidiness: anvil defaults to 31337 even when forking,
 # and `chainId` sits inside the EIP-712 domain. A rehearsal on 31337 would sign
 # under a different domain separator than production and prove nothing about the
 # signatures that matter.
-anvil --fork-url "$BASE_SEPOLIA_RPC_URL" --port "$PORT" --chain-id 84532 --silent >"$LOG" 2>&1 &
+anvil --fork-url "$FORK_RPC" --port "$PORT" --chain-id "$FORK_CHAIN" --silent >"$LOG" 2>&1 &
 ANVIL_PID=$!
 for _ in $(seq 1 40); do
   cast chain-id --rpc-url "$LOCAL_RPC" >/dev/null 2>&1 && break
@@ -65,7 +74,7 @@ for _ in $(seq 1 40); do
 done
 CHAIN_ID=$(cast chain-id --rpc-url "$LOCAL_RPC")
 echo "    up on $LOCAL_RPC, chain $CHAIN_ID"
-[[ "$CHAIN_ID" == "84532" ]] || { echo "expected chain 84532, got $CHAIN_ID"; exit 1; }
+[[ "$CHAIN_ID" == "$FORK_CHAIN" ]] || { echo "expected chain $FORK_CHAIN, got $CHAIN_ID"; exit 1; }
 
 # Funding the principal with USDC is the only part of this rehearsal that a real run
 # does at a faucet. Base Sepolia USDC is a Circle FiatToken, so the mint path is
@@ -110,6 +119,7 @@ AGENT_ID=$(awk '/^  AGENT_ID /{print $2}' /tmp/g5-dryrun-deploy.log | tail -1)
 [[ -n "$AGENT_ID" ]] || { echo "could not read AGENT_ID out of the deploy log"; exit 1; }
 export AGENT_ID CHAIN_ID
 export BASE_SEPOLIA_RPC_URL="$LOCAL_RPC"
+export TARGET_RPC_URL="$LOCAL_RPC"
 unset VAULT_ADDRESS ROUTER_ADDRESS || true
 
 echo "=== running the demo ==="

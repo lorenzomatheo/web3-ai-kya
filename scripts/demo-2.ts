@@ -39,9 +39,8 @@
  * the contract is broken.
  */
 import {createPublicClient, createWalletClient, http, decodeEventLog, BaseError, ContractFunctionRevertedError} from "viem";
-import {baseSepolia} from "viem/chains";
 import type {Address, Hex} from "viem";
-import {loadConfig, abiOf, domainFor, MANDATE_TYPES, ERC20_ABI, type Mandate} from "./config.ts";
+import {loadConfig, abiOf, domainFor, MANDATE_TYPES, ERC20_ABI, targetChain, type Mandate} from "./config.ts";
 
 // DESIGN's 1,000 / 500 / 600, scaled by 50 to fit one Circle faucet claim.
 const CAP = 20_000_000n; // 20 USDC at 6dp
@@ -53,10 +52,16 @@ const vaultAbi = abiOf("AllowlistedERC4626");
 
 const cfg = loadConfig();
 const transport = http(cfg.rpcUrl);
-const pub = createPublicClient({chain: baseSepolia, transport});
+const pub = createPublicClient({chain: targetChain, transport});
 const chainId = await pub.getChainId();
+if (chainId !== targetChain.id) {
+  throw new Error(
+    `RPC reports chain ${chainId} but TARGET_CHAIN_ID selects ${targetChain.id} (${targetChain.name}). ` +
+      `Signatures would be produced against the wrong EIP-712 domain. Fix TARGET_RPC_URL or TARGET_CHAIN_ID.`,
+  );
+}
 
-const wallet = (account: (typeof cfg)["agent"]) => createWalletClient({account, chain: baseSepolia, transport});
+const wallet = (account: (typeof cfg)["agent"]) => createWalletClient({account, chain: targetChain, transport});
 
 let step = 0;
 const failures: string[] = [];

@@ -1,7 +1,37 @@
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {privateKeyToAccount} from "viem/accounts";
-import type {Abi, Address, Hex} from "viem";
+import {baseSepolia, sepolia} from "viem/chains";
+import type {Abi, Address, Chain, Hex} from "viem";
+
+/**
+ * The target chain, selected by `TARGET_CHAIN_ID` and defaulting to Base Sepolia.
+ *
+ * Selectable rather than hardcoded because the chain is the single thing most
+ * easily got wrong here: an address is derived from a private key alone, so it is
+ * identical on every EVM chain and looks correct on all of them, while balances,
+ * nonces and code are per-chain. Funding "the right address" on the wrong chain
+ * produces no error anywhere -- just an empty balance on the chain that matters.
+ *
+ * viem needs the real chain object, not just the id: `writeContract` refuses to
+ * send when the client's chain disagrees with the RPC's.
+ */
+const CHAINS: Record<number, Chain> = {
+  [baseSepolia.id]: baseSepolia, // 84532
+  [sepolia.id]: sepolia, // 11155111
+};
+
+export const TARGET_CHAIN_ID = Number(process.env.TARGET_CHAIN_ID ?? baseSepolia.id);
+
+export const targetChain: Chain = (() => {
+  const c = CHAINS[TARGET_CHAIN_ID];
+  if (!c) {
+    throw new Error(
+      `TARGET_CHAIN_ID=${TARGET_CHAIN_ID} is not configured. Known: ${Object.keys(CHAINS).join(", ")}.`,
+    );
+  }
+  return c;
+})();
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -47,7 +77,9 @@ function fromBroadcast(chainId: number): Record<string, Address> {
 }
 
 export function loadConfig() {
-  const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+  // TARGET_RPC_URL wins; BASE_SEPOLIA_RPC_URL is the historical name and still works
+  // so nothing that predates the chain switch breaks.
+  const rpcUrl = process.env.TARGET_RPC_URL || required("BASE_SEPOLIA_RPC_URL");
 
   const deployer = privateKeyToAccount(privateKey("DEPLOYER_PRIVATE_KEY"));
   const principal = privateKeyToAccount(privateKey("PRINCIPAL_PRIVATE_KEY"));
@@ -59,7 +91,7 @@ export function loadConfig() {
   let vault = process.env.VAULT_ADDRESS as Address | undefined;
   let router = process.env.ROUTER_ADDRESS as Address | undefined;
   if (!vault || !router) {
-    const chainId = Number(process.env.CHAIN_ID ?? 84532);
+    const chainId = Number(process.env.CHAIN_ID ?? TARGET_CHAIN_ID);
     const deployed = fromBroadcast(chainId);
     vault ??= deployed.AllowlistedERC4626;
     router ??= deployed.MandateRouter;
