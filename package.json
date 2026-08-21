@@ -7,7 +7,8 @@
   "scripts": {
     "demo": "tsx scripts/demo.ts",
     "dryrun": "./scripts/dryrun.sh",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "demo-2": "tsx scripts/demo-2.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
