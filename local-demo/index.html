@@ -139,6 +139,14 @@ ol#flow { list-style: none; padding: 0; margin: 0; }
 .step .out code { color: var(--good); font-weight: 560; }
 .step .out code.bad { color: var(--bad); }
 .step.active .out:not(:empty) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.nextslot:not(:empty) { margin-top: 12px; }
+button.inline-next { font-size: 13.5px; padding: 8px 18px; border-radius: 999px;
+  border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent); font-weight: 560; display: inline-flex; align-items: center; gap: 9px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.inline-next:hover { background: var(--accent); color: #fff; }
+button.inline-next:disabled { opacity: .45; cursor: default; }
+button.inline-next span { opacity: .7; }
 
 /* checks */
 .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); }

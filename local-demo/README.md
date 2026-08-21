@@ -17,7 +17,8 @@ Ctrl-C stops both.
 `Start` takes the first step and then waits. From there:
 
 - **Next** — one step at a time, labelled with what is about to happen, so you can
-  talk over it.
+  talk over it. The button also appears **inline on the step that just finished**, so
+  it follows you down the page instead of leaving you scrolling back to the header.
 - **Play the rest** — runs the remainder unattended, and turns into **Pause**.
 
 The signed mandate is drawn as a document once step 8 completes, because its *shape*

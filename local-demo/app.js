@@ -553,7 +553,7 @@ function renderSteps(list) {
     <li id="s${i}" class="step">
       <div class="num">${i + 1}</div>
       <div class="body"><div class="t">${s.t}</div><div class="d">${s.d}</div>
-      <div class="out"></div></div>
+      <div class="out"></div><div class="nextslot"></div></div>
     </li>`,
     )
     .join("");
@@ -669,6 +669,27 @@ function setControls() {
   play.textContent = S.playing ? "Pause" : "Play the rest";
 
   $("#progress").textContent = started ? `${Math.min(S.i, S.list.length)} / ${S.list.length}` : "";
+
+  placeInlineNext(started, done);
+}
+
+/** Puts a Next button on the step that just finished, so the control is wherever you
+ *  are reading rather than back at the top of the page. Only one exists at a time --
+ *  it moves down with you. */
+function placeInlineNext(started, done) {
+  if (!S.list) return;
+  for (let k = 0; k < S.list.length; k++) {
+    const slot = $(`#s${k} .nextslot`);
+    if (slot) slot.innerHTML = "";
+  }
+  if (!started || done || S.failed || S.i === 0 || S.playing) return;
+
+  const slot = $(`#s${S.i - 1} .nextslot`);
+  if (!slot) return;
+  slot.innerHTML =
+    `<button class="inline-next"${S.busy ? " disabled" : ""}>Next · ${S.list[S.i].t} <span>▸</span></button>`;
+  const b = slot.querySelector("button");
+  if (b) b.addEventListener("click", () => stepOnce());
 }
 
 async function start() {
