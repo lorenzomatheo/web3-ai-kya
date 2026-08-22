@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Vault Gate</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Azeret+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   THEME TOKENS
+   =========================================== */
+:root{
+  --black:#0A0A0A;
+  --white:#FFFFFF;
+  --pink:#F2D4CF;
+  --green:#E5EDD6;
+  --gray:#F5F5F5;
+  --stage-bg:#0A0A0A;
+  --slide-bg:#FFFFFF;
+  --bd:3px solid var(--black);
+  --shadow:6px 6px 0 var(--black);
+  --shadow-sm:4px 4px 0 var(--black);
+  --font-display:'Archivo', system-ui, sans-serif;
+  --font-mono:'Azeret Mono', ui-monospace, monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --dur:.55s;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+
+/* ===========================================
+   FIXED 16:9 STAGE (viewport-base.css)
+   =========================================== */
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--stage-bg,#000);}
+.deck-viewport{position:fixed;inset:0;overflow:hidden;background:var(--stage-bg,#000);}
+.deck-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;background:var(--slide-bg,#fff);}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;display:block;visibility:hidden;opacity:0;pointer-events:none;background:var(--slide-bg,#fff);}
+.slide.active,.slide.visible{visibility:visible;opacity:1;pointer-events:auto;z-index:1;}
+img,video,canvas,svg{max-width:100%;max-height:100%;}
+@media print{
+  html,body{width:1920px;height:auto;overflow:visible;background:#fff;}
+  .deck-viewport{position:static;overflow:visible;background:#fff;}
+  .deck-stage{position:static;width:auto;height:auto;transform:none !important;background:none;}
+  .slide{position:relative;display:block !important;visibility:visible !important;opacity:1 !important;pointer-events:auto !important;width:1920px;height:1080px;break-after:page;page-break-after:always;}
+  .slide:last-child{break-after:auto;page-break-after:auto;}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.2s !important;}
+}
+
+/* ===========================================
+   TYPE
+   Display: weight 900, uppercase, negative tracking.
+   Body: weight 500, sentence case. No italics.
+   =========================================== */
+.slide{font-family:var(--font-display);color:var(--black);}
+h1{font-weight:900;text-transform:uppercase;font-size:150px;line-height:.88;letter-spacing:-.035em;}
+h2{font-weight:900;text-transform:uppercase;font-size:76px;line-height:.96;letter-spacing:-.025em;}
+h3{font-weight:800;text-transform:uppercase;font-size:38px;line-height:1.1;letter-spacing:.01em;}
+.body{font-weight:500;font-size:29px;line-height:1.45;}
+.sub{font-weight:700;text-transform:uppercase;font-size:26px;letter-spacing:.05em;}
+.mono{font-family:var(--font-mono);font-weight:400;}
+
+/* ===========================================
+   COMPONENTS
+   =========================================== */
+.pill{display:inline-block;background:var(--black);color:var(--white);font-weight:800;
+  font-size:20px;letter-spacing:.09em;text-transform:uppercase;padding:10px 18px;}
+.chip{display:inline-block;background:var(--white);border:var(--bd);box-shadow:var(--shadow-sm);
+  font-family:var(--font-mono);font-weight:600;font-size:23px;padding:12px 18px;}
+.chip.pink{background:var(--pink);}
+.chip.green{background:var(--green);}
+.wall{position:absolute;font-weight:900;font-size:170px;line-height:1;letter-spacing:-.04em;opacity:.18;}
+.cell .pill,.close .pill{align-self:flex-start;}
+
+/* ===========================================
+   SLIDE SHELL
+   Band, headline strip, then a full-width canvas
+   for the drawing. Regions meet at borders.
+   =========================================== */
+.slide.content{display:grid;grid-template-rows:118px 200px 1fr;}
+.band{border-bottom:var(--bd);display:flex;align-items:center;justify-content:space-between;padding:0 56px;}
+.band .left{display:flex;align-items:center;gap:26px;}
+.band .rule{width:60px;height:4px;background:var(--black);}
+.band .meta{font-family:var(--font-mono);font-size:21px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;}
+.head{border-bottom:var(--bd);display:flex;align-items:center;justify-content:space-between;
+  gap:60px;padding:0 56px;}
+.head.pink{background:var(--pink);}
+.head.green{background:var(--green);}
+.head.dark{background:var(--black);color:var(--white);}
+.head .note{font-family:var(--font-mono);font-size:24px;line-height:1.5;text-align:right;flex:0 0 auto;}
+.canvas{padding:34px 56px;display:flex;align-items:center;justify-content:center;min-height:0;}
+.canvas.gray{background:var(--gray);}
+.canvas svg{width:100%;height:100%;}
+
+/* ===========================================
+   DRAWING VOCABULARY
+   3px black strokes, pastel fills, hard offsets.
+   =========================================== */
+svg .s{stroke:var(--black);stroke-width:3;fill:none;}
+svg .fill-w{fill:var(--white);}
+svg .fill-p{fill:var(--pink);}
+svg .fill-g{fill:var(--green);}
+svg .fill-k{fill:var(--black);}
+svg .shadow{fill:var(--black);}
+svg .dash{stroke-dasharray:12 10;}
+svg .lbl{font-family:var(--font-display);font-weight:900;font-size:26px;letter-spacing:-.01em;fill:var(--black);}
+svg .lbl-sm{font-family:var(--font-display);font-weight:900;font-size:21px;letter-spacing:.02em;fill:var(--black);}
+svg .lbl-w{fill:var(--white);}
+svg .mn{font-family:var(--font-mono);font-weight:400;font-size:20px;fill:var(--black);}
+svg .mn-w{font-family:var(--font-mono);font-weight:600;font-size:17px;fill:var(--white);}
+svg .cap{font-family:var(--font-display);font-weight:700;font-size:17px;letter-spacing:.09em;fill:var(--black);opacity:.62;}
+
+/* ===========================================
+   COVER + CLOSE
+   =========================================== */
+.cover{display:grid;grid-template-columns:1fr 600px;grid-template-rows:118px 1fr 232px;}
+.cover .strip{display:flex;align-items:center;justify-content:space-between;padding:0 56px;border-right:var(--bd);border-bottom:var(--bd);}
+.cover .hero{border-right:var(--bd);border-bottom:var(--bd);padding:0 56px;display:flex;flex-direction:column;justify-content:center;}
+.cover .side{background:var(--pink);border-bottom:var(--bd);padding:40px;display:flex;align-items:center;justify-content:center;}
+.cover .foot{background:var(--green);border-right:var(--bd);padding:0 56px;display:flex;align-items:center;gap:22px;}
+.cover .foot-r{display:flex;align-items:center;justify-content:flex-end;padding:0 56px;font-weight:900;font-size:112px;letter-spacing:-.04em;}
+.close{display:grid;grid-template-rows:1fr 260px;}
+.close .top{padding:0 96px;display:flex;flex-direction:column;justify-content:center;border-bottom:var(--bd);}
+.close .bottom{display:grid;grid-template-columns:1fr 1fr;}
+.cell{padding:52px 56px;display:flex;flex-direction:column;position:relative;}
+/* Final slide: a blackout title before switching to the live demo */
+.demo-slide{background:var(--black);display:flex;align-items:center;justify-content:center;}
+.demo-slide h1{color:var(--white);font-size:340px;letter-spacing:-.045em;text-align:center;padding:0 60px;}
+.demo-slide h1.thanks{font-size:236px;}
+.cell.green{background:var(--green);}
+.cell.dark{background:var(--black);color:var(--white);}
+.cell.lc{border-right:none;}
+
+/* ===========================================
+   ENTRANCE
+   =========================================== */
+.reveal{opacity:0;transform:translate(-12px,16px);
+  transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease);}
+.slide.visible .reveal{opacity:1;transform:none;}
+.slide.visible .d1{transition-delay:.05s}
+.slide.visible .d2{transition-delay:.16s}
+.slide.visible .d3{transition-delay:.27s}
+.slide.visible .d4{transition-delay:.38s}
+/* Drawings draw themselves in, one group at a time */
+.slide svg .g1,.slide svg .g2,.slide svg .g3,.slide svg .g4,.slide svg .g5{
+  opacity:0;transition:opacity .5s var(--ease);}
+.slide.visible svg .g1{opacity:1;transition-delay:.30s}
+.slide.visible svg .g2{opacity:1;transition-delay:.55s}
+.slide.visible svg .g3{opacity:1;transition-delay:.80s}
+.slide.visible svg .g4{opacity:1;transition-delay:1.05s}
+.slide.visible svg .g5{opacity:1;transition-delay:1.30s}
+
+/* ===========================================
+   EDIT CHROME
+   =========================================== */
+.edit-hotzone{position:fixed;top:0;left:0;width:80px;height:80px;z-index:10000;cursor:pointer;}
+.edit-toggle{position:fixed;top:16px;left:16px;z-index:10001;opacity:0;pointer-events:none;
+  transition:opacity .3s ease;background:var(--white);border:3px solid var(--black);
+  box-shadow:var(--shadow-sm);font-size:18px;padding:8px 12px;cursor:pointer;}
+.edit-toggle.show,.edit-toggle.active{opacity:1;pointer-events:auto;}
+.edit-toggle.active{background:var(--pink);}
+[contenteditable="true"]{outline:2px dashed var(--black);outline-offset:4px;}
+</style>
+</head>
+<body>
+
+<div class="edit-hotzone" aria-hidden="true"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)">Edit</button>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+<!-- ============================================================
+     1 — COVER
+     A KYC gated vault already knows who I am. It does not know my
+     agent. I built the missing piece: a signed permission slip that
+     lets my agent deposit on my behalf, with limits the vault checks.
+     ============================================================ -->
+<section class="slide cover active visible">
+  <div class="strip reveal d1">
+    <span class="pill">Know Your Agent</span>
+    <span class="mono sub">Ethereum Sepolia</span>
+  </div>
+  <div class="strip lc reveal d1" style="background:var(--gray);border-right:none">
+    <span class="mono sub">Demo Day</span>
+    <span class="mono sub">01</span>
+  </div>
+
+  <div class="hero">
+    <h1 class="reveal d2">Agent<br>Vault<br>Gate</h1>
+  </div>
+
+  <!-- Cover drawing: the human passes the gate, the agent does not -->
+  <div class="side lc" style="border-right:none">
+    <svg viewBox="0 0 460 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A human passes the gate, an agent is stopped by it">
+      <defs><marker id="c1" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+        <path d="M0,1 L10,6 L0,11 z" fill="#0A0A0A"/></marker></defs>
+      <g class="g1">
+        <rect x="30" y="60" width="180" height="110" class="s fill-w"/>
+        <text x="120" y="112" text-anchor="middle" class="lbl-sm">HUMAN</text>
+        <text x="120" y="140" text-anchor="middle" class="mn" font-size="17">0x4C1f…</text>
+        <path d="M215 115 H330" class="s" marker-end="url(#c1)"/>
+      </g>
+      <g class="g2">
+        <rect x="352" y="20" width="86" height="580" class="s fill-w"/>
+        <text transform="translate(395,528) rotate(-90)" text-anchor="middle" class="lbl-sm">ALLOWLIST</text>
+        <rect x="352" y="76" width="86" height="78" fill="#E5EDD6" stroke="#0A0A0A" stroke-width="3"/>
+      </g>
+      <g class="g3">
+        <rect x="30" y="330" width="180" height="110" class="s fill-w"/>
+        <text x="120" y="382" text-anchor="middle" class="lbl-sm">AGENT</text>
+        <text x="120" y="410" text-anchor="middle" class="mn" font-size="17">0x9f3a…</text>
+        <path d="M215 385 H330" class="s" marker-end="url(#c1)"/>
+        <path d="M368 360 L422 414 M422 360 L368 414" stroke="#0A0A0A" stroke-width="7"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="foot reveal d3">
+    <span class="chip">NotAgent</span>
+    <span class="chip">ExceedsMandate</span>
+  </div>
+  <div class="foot-r reveal d4">01</div>
+</section>
+
+
+<!-- ============================================================
+     2 — THE MARKET
+     Money is already sitting in vaults. DefiLlama's risk curators
+     category tracks 9.36 billion dollars deposited across vaults run
+     by 61 curators. And it is growing.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">Why</span><span class="rule"></span><span class="sub">The market</span></span>
+    <span class="meta">02 / 11</span>
+  </div>
+  <div class="head">
+    <h2 class="reveal d1">The money is<br>already in vaults</h2>
+    <span class="note reveal d2">DefiLlama, risk curators<br>22 August 2026</span>
+  </div>
+  <div class="canvas gray">
+    <svg viewBox="0 0 1808 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="9.36 billion dollars deposited across vaults run by 61 tracked curators, and growing">
+      <!-- the headline figure -->
+      <g class="g1">
+        <text x="40" y="248" font-family="Archivo, sans-serif" font-weight="900" font-size="226" letter-spacing="-10" fill="#0A0A0A">$9.36B</text>
+        <path d="M40 296 H1020" class="s" stroke-width="6"/>
+        <text x="40" y="356" class="lbl-sm">DEPOSITED IN VAULTS RUN BY RISK CURATORS</text>
+      </g>
+
+      <!-- who runs them -->
+      <g class="g2">
+        <rect x="40" y="424" width="470" height="160" class="shadow" transform="translate(6,6)"/>
+        <rect x="40" y="424" width="470" height="160" class="s fill-w"/>
+        <text x="86" y="536" font-family="Archivo, sans-serif" font-weight="900" font-size="96" letter-spacing="-4" fill="#0A0A0A">61</text>
+        <text x="222" y="500" class="lbl-sm">CURATORS</text>
+        <text x="222" y="540" class="lbl-sm">TRACKED</text>
+      </g>
+
+      <!-- and it is growing -->
+      <g class="g3">
+        <rect x="1100" y="40" width="668" height="544" class="s fill-p"/>
+        <path d="M1434 480 V180" stroke="#0A0A0A" stroke-width="34" fill="none"/>
+        <path d="M1434 108 L1568 262 L1300 262 Z" fill="#0A0A0A"/>
+        <text x="1434" y="546" text-anchor="middle" class="lbl">AND GROWING</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<!-- ============================================================
+     3 — VAULTS SIT BEHIND A GATE
+     Vaults are the hedge fund of this economy. You deposit, you get
+     a token for your share, you redeem when you want out. As
+     regulation tightens, more of that capital moves behind a gate:
+     the operator KYCs a person and writes their wallet to an
+     allowlist. The compliance perimeter is a list of human wallets.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">Why</span><span class="rule"></span><span class="sub">Where the capital sits</span></span>
+    <span class="meta">03 / 11</span>
+  </div>
+  <div class="head">
+    <h2 class="reveal d1">Vaults sit behind a gate</h2>
+    <span class="note reveal d2">the perimeter is<br>a list of human wallets</span>
+  </div>
+  <div class="canvas gray">
+    <svg viewBox="0 0 1808 660" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A KYC'd wallet deposits through an allowlist gate into a vault and receives shares back">
+      <defs><marker id="a2" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
+        <path d="M0,1 L11,6.5 L0,12 z" fill="#0A0A0A"/></marker></defs>
+
+      <!-- wallet -->
+      <g class="g1">
+        <rect x="52" y="206" width="360" height="200" class="shadow" transform="translate(6,6)"/>
+        <rect x="52" y="206" width="360" height="200" class="s fill-w"/>
+        <text x="232" y="290" text-anchor="middle" class="lbl">YOUR WALLET</text>
+        <rect x="152" y="318" width="160" height="46" class="s fill-g"/>
+        <text x="232" y="349" text-anchor="middle" class="lbl-sm">KYC DONE</text>
+      </g>
+
+      <!-- deposit arrow -->
+      <g class="g2">
+        <path d="M420 306 H700" class="s" marker-end="url(#a2)"/>
+        <text x="556" y="278" text-anchor="middle" class="cap">DEPOSIT</text>
+      </g>
+
+      <!-- the gate -->
+      <g class="g3">
+        <text x="826" y="66" text-anchor="middle" class="lbl">ALLOWLIST</text>
+        <rect x="726" y="92" width="200" height="508" class="s fill-p"/>
+        <rect x="726" y="246" width="200" height="120" class="s fill-w"/>
+        <text x="826" y="314" text-anchor="middle" class="lbl-sm">OPEN</text>
+      </g>
+
+      <!-- vault -->
+      <g class="g4">
+        <path d="M934 306 H1214" class="s" marker-end="url(#a2)"/>
+        <rect x="1240" y="206" width="380" height="200" class="shadow" transform="translate(6,6)"/>
+        <rect x="1240" y="206" width="380" height="200" class="s fill-w"/>
+        <text x="1430" y="290" text-anchor="middle" class="lbl">THE VAULT</text>
+        <text x="1430" y="340" text-anchor="middle" class="mn">ERC-4626 · yield</text>
+      </g>
+
+      <!-- shares return -->
+      <g class="g5">
+        <path d="M1430 412 V632 H232 V418" class="s" marker-end="url(#a2)"/>
+        <rect x="1040" y="604" width="200" height="56" class="s fill-w"/>
+        <text x="1140" y="641" text-anchor="middle" class="lbl-sm">SHARES</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     4 — AGENTS ARE ALREADY ACTING FOR YOU
+     Agents are starting to decide what you buy, who you buy it from,
+     which subscriptions you keep. Teams are building those rails with
+     ERC-8004 and x402. Investing is next. People will delegate the
+     call to put money into a vault and the call to pull it out.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">Why</span><span class="rule"></span><span class="sub">Who is holding the keys</span></span>
+    <span class="meta">04 / 11</span>
+  </div>
+  <div class="head">
+    <h2 class="reveal d1">Agents already<br>act for you</h2>
+    <span class="note reveal d2">ERC-8004 · x402<br>the rails are shipping</span>
+  </div>
+  <div class="canvas gray">
+    <svg viewBox="0 0 1808 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="One human delegates to a fleet of three agents, which act on merchants, subscriptions and vaults">
+      <defs><marker id="a3" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
+        <path d="M0,1 L11,6.5 L0,12 z" fill="#0A0A0A"/></marker></defs>
+
+      <g class="g1">
+        <rect x="40" y="230" width="300" height="160" class="shadow" transform="translate(6,6)"/>
+        <rect x="40" y="230" width="300" height="160" class="s fill-w"/>
+        <text x="190" y="325" text-anchor="middle" class="lbl">YOU</text>
+      </g>
+
+      <!-- fan out to the fleet -->
+      <g class="g2">
+        <path d="M348 310 H430 V100 H560" class="s" marker-end="url(#a3)"/>
+        <path d="M348 310 H560" class="s" marker-end="url(#a3)"/>
+        <path d="M348 310 H430 V520 H560" class="s" marker-end="url(#a3)"/>
+        <text x="430" y="212" text-anchor="middle" class="cap">DELEGATE</text>
+      </g>
+
+      <g class="g3">
+        <rect x="586" y="40" width="300" height="120" class="s fill-w"/>
+        <text x="736" y="112" text-anchor="middle" class="lbl-sm">AGENT 01</text>
+        <rect x="586" y="250" width="300" height="120" class="s fill-w"/>
+        <text x="736" y="322" text-anchor="middle" class="lbl-sm">AGENT 02</text>
+        <rect x="586" y="460" width="300" height="120" class="s fill-w"/>
+        <text x="736" y="532" text-anchor="middle" class="lbl-sm">AGENT 03</text>
+      </g>
+
+      <g class="g4">
+        <path d="M894 100 H1156" class="s" marker-end="url(#a3)"/>
+        <path d="M894 310 H1156" class="s" marker-end="url(#a3)"/>
+        <path d="M894 520 H1156" class="s" marker-end="url(#a3)"/>
+        <rect x="1182" y="40" width="586" height="120" class="s fill-w"/>
+        <text x="1230" y="112" class="lbl">MERCHANTS</text>
+        <rect x="1182" y="250" width="586" height="120" class="s fill-w"/>
+        <text x="1230" y="322" class="lbl">SUBSCRIPTIONS</text>
+      </g>
+
+      <g class="g5">
+        <rect x="1182" y="460" width="586" height="120" class="shadow" transform="translate(6,6)"/>
+        <rect x="1182" y="460" width="586" height="120" class="s fill-p"/>
+        <text x="1230" y="532" class="lbl">VAULTS</text>
+        <rect x="1596" y="486" width="140" height="52" class="s fill-k"/>
+        <text x="1666" y="519" text-anchor="middle" class="lbl-sm lbl-w">NEXT</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     5 — THE GATE CANNOT SEE THE AGENT
+     The vault knows the human address, not the agent address. I was
+     already underwritten, my money is welcome, and my agent shows up
+     with its own key to a gate that sees a stranger. And I do not have
+     one agent, I have a fleet. Do I KYC every one of them? KYC settles
+     identity. What I need to express is authority.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">Why</span><span class="rule"></span><span class="sub">The mismatch</span></span>
+    <span class="meta">05 / 11</span>
+  </div>
+  <div class="head pink">
+    <h2 class="reveal d1">Same money.<br>Wrong address.</h2>
+    <span class="note reveal d2">KYC settles identity.<br>Authority is the open question.</span>
+  </div>
+  <div class="canvas">
+    <svg viewBox="0 0 1808 668" preserveAspectRatio="xMidYMid meet" role="img" aria-label="The human's wallet passes through the allowlist into the vault while the agent's wallet is rejected">
+      <defs><marker id="a4" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
+        <path d="M0,1 L11,6.5 L0,12 z" fill="#0A0A0A"/></marker></defs>
+
+      <!-- the wall -->
+      <g class="g1">
+        <text x="950" y="44" text-anchor="middle" class="lbl">ALLOWLIST</text>
+        <rect x="860" y="70" width="180" height="590" class="s fill-p"/>
+      </g>
+
+      <!-- human path: through the open door -->
+      <g class="g2">
+        <rect x="40" y="70" width="380" height="150" class="s fill-w"/>
+        <text x="230" y="130" text-anchor="middle" class="lbl">THE HUMAN</text>
+        <text x="230" y="176" text-anchor="middle" class="mn">0x4C1f…</text>
+        <rect x="860" y="90" width="180" height="110" class="s fill-w"/>
+        <text x="950" y="155" text-anchor="middle" class="lbl-sm">OPEN</text>
+        <path d="M428 145 H852" class="s" marker-end="url(#a4)"/>
+        <path d="M1048 145 H1300" class="s" marker-end="url(#a4)"/>
+        <rect x="1326" y="70" width="442" height="150" class="s fill-g"/>
+        <text x="1547" y="130" text-anchor="middle" class="lbl">THE VAULT</text>
+        <text x="1547" y="176" text-anchor="middle" class="mn">deposit accepted</text>
+      </g>
+
+      <!-- agent path: bounces -->
+      <g class="g3">
+        <rect x="40" y="400" width="380" height="150" class="s fill-w"/>
+        <text x="230" y="460" text-anchor="middle" class="lbl">THE AGENT</text>
+        <text x="230" y="506" text-anchor="middle" class="mn">0x9f3a…</text>
+        <path d="M428 475 H840" class="s" marker-end="url(#a4)"/>
+        <path d="M886 430 L1014 520 M1014 430 L886 520" stroke="#0A0A0A" stroke-width="9"/>
+      </g>
+
+      <!-- the revert, and the fleet -->
+      <g class="g4">
+        <path d="M846 610 H500" class="s" marker-end="url(#a4)"/>
+        <rect x="80" y="582" width="400" height="56" class="s fill-k"/>
+        <text x="280" y="619" text-anchor="middle" class="mn-w" font-size="20">NotAllowlisted(agent)</text>
+        <rect x="1326" y="400" width="442" height="150" class="s fill-w"/>
+        <text x="1547" y="452" text-anchor="middle" class="lbl-sm">AND IT IS A FLEET</text>
+        <rect x="1380" y="480" width="100" height="46" class="s fill-w"/>
+        <rect x="1500" y="480" width="100" height="46" class="s fill-w"/>
+        <rect x="1620" y="480" width="100" height="46" class="s fill-w"/>
+        <text x="1430" y="511" text-anchor="middle" class="mn" font-size="17">01</text>
+        <text x="1550" y="511" text-anchor="middle" class="mn" font-size="17">02</text>
+        <text x="1670" y="511" text-anchor="middle" class="mn" font-size="17">03</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     6 — KYC THE HUMAN ONCE
+     The KYC stays where it is and we add one primitive on top.
+     ERC-8004 gives the agent a durable identity as an NFT, so ownerOf
+     tells you which human owns it. The human signs a mandate offline
+     with EIP-712, no transaction and no gas, naming the agent, one
+     vault, a cap and an expiry. It rides along in the deposit calldata.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">How</span><span class="rule"></span><span class="sub">The primitive</span></span>
+    <span class="meta">06 / 11</span>
+  </div>
+  <div class="head green">
+    <h2 class="reveal d1">One signature,<br>signed offline</h2>
+    <span class="note reveal d2">no transaction<br>no gas</span>
+  </div>
+  <div class="canvas">
+    <svg viewBox="0 0 1808 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="The human signs a mandate naming an agent, a vault, a cap and an expiry, and hands it to the agent">
+      <defs><marker id="a5" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
+        <path d="M0,1 L11,6.5 L0,12 z" fill="#0A0A0A"/></marker></defs>
+
+      <g class="g1">
+        <rect x="20" y="220" width="300" height="180" class="shadow" transform="translate(6,6)"/>
+        <rect x="20" y="220" width="300" height="180" class="s fill-w"/>
+        <text x="170" y="300" text-anchor="middle" class="lbl">THE HUMAN</text>
+        <text x="170" y="346" text-anchor="middle" class="mn">already KYC'd</text>
+      </g>
+
+      <g class="g2">
+        <path d="M328 310 H500" class="s" marker-end="url(#a5)"/>
+        <text x="414" y="282" text-anchor="middle" class="cap">SIGNS</text>
+      </g>
+
+      <!-- the mandate itself -->
+      <g class="g3">
+        <rect x="526" y="60" width="700" height="500" class="shadow" transform="translate(8,8)"/>
+        <rect x="526" y="60" width="700" height="500" class="s fill-w"/>
+        <rect x="526" y="60" width="700" height="70" class="fill-k"/>
+        <text x="560" y="107" class="lbl lbl-w">MANDATE</text>
+        <text x="1192" y="105" text-anchor="end" class="mn-w" font-size="19">EIP-712</text>
+
+        <text x="566" y="196" class="mn" font-size="24">agent</text>
+        <text x="1186" y="196" text-anchor="end" class="mn" font-size="24">#42</text>
+        <path d="M560 220 H1192" class="s" stroke-width="2" opacity=".3"/>
+
+        <text x="566" y="278" class="mn" font-size="24">vault</text>
+        <text x="1186" y="278" text-anchor="end" class="mn" font-size="24">this one only</text>
+        <path d="M560 302 H1192" class="s" stroke-width="2" opacity=".3"/>
+
+        <text x="566" y="360" class="mn" font-size="24">cap</text>
+        <text x="1186" y="360" text-anchor="end" class="mn" font-size="24">1,000 USDC</text>
+        <path d="M560 384 H1192" class="s" stroke-width="2" opacity=".3"/>
+
+        <text x="566" y="442" class="mn" font-size="24">expiry</text>
+        <text x="1186" y="442" text-anchor="end" class="mn" font-size="24">Friday</text>
+
+        <path d="M566 512 c 40 -34, 70 26, 110 -8 s 66 32, 104 -12 s 60 30, 96 4" class="s"/>
+        <text x="1186" y="518" text-anchor="end" class="cap">SIGNATURE</text>
+      </g>
+
+      <g class="g4">
+        <path d="M1234 310 H1406" class="s" marker-end="url(#a5)"/>
+        <text x="1320" y="282" text-anchor="middle" class="cap">CARRIES</text>
+        <rect x="1432" y="220" width="340" height="180" class="s fill-p"/>
+        <text x="1602" y="300" text-anchor="middle" class="lbl">THE AGENT</text>
+        <text x="1602" y="346" text-anchor="middle" class="mn">ERC-8004 #42</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     7 — THE AGENT NEVER TOUCHES THE MONEY
+     Funds leave the principal's wallet, shares mint to the principal,
+     redeems pay the principal. Hardcoded, so the agent only controls
+     timing and amount inside the cap. The router holds nothing before
+     or after, so the vault's ledger still reads principal to shares.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">How</span><span class="rule"></span><span class="sub">Containment</span></span>
+    <span class="meta">07 / 11</span>
+  </div>
+  <div class="head">
+    <h2 class="reveal d1">The agent never<br>touches the money</h2>
+    <span class="note reveal d2">it controls timing<br>and amount. nothing else.</span>
+  </div>
+  <div class="canvas gray">
+    <svg viewBox="0 0 1808 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Money flows from the principal's wallet through the router to the vault and back to the principal, while the agent only sends instructions">
+      <defs><marker id="a7" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
+        <path d="M0,1 L11,6.5 L0,12 z" fill="#0A0A0A"/></marker></defs>
+
+      <!-- the agent, off the money path -->
+      <g class="g1">
+        <rect x="700" y="20" width="420" height="140" class="s fill-w"/>
+        <text x="910" y="80" text-anchor="middle" class="lbl">THE AGENT</text>
+        <rect x="762" y="102" width="296" height="42" class="s fill-p"/>
+        <text x="910" y="131" text-anchor="middle" class="mn" font-size="18">holds 0 USDC · 0 shares</text>
+      </g>
+      <g class="g2">
+        <path d="M910 168 V286" class="s dash" marker-end="url(#a7)"/>
+        <text x="944" y="236" class="cap">MANDATE + SIGNATURE, NO FUNDS</text>
+      </g>
+
+      <!-- the money path -->
+      <g class="g3">
+        <rect x="40" y="310" width="380" height="180" class="s fill-w"/>
+        <text x="230" y="382" text-anchor="middle" class="lbl">PRINCIPAL</text>
+        <text x="230" y="428" text-anchor="middle" class="mn">the KYC'd wallet</text>
+        <path d="M428 400 H694" class="s" marker-end="url(#a7)"/>
+        <text x="560" y="372" text-anchor="middle" class="cap">USDC</text>
+        <rect x="720" y="310" width="380" height="180" class="s fill-p"/>
+        <text x="910" y="382" text-anchor="middle" class="lbl">ROUTER</text>
+        <text x="910" y="428" text-anchor="middle" class="mn">balance 0 · 0</text>
+      </g>
+
+      <g class="g4">
+        <path d="M1108 400 H1374" class="s" marker-end="url(#a7)"/>
+        <text x="1240" y="372" text-anchor="middle" class="cap">DEPOSIT</text>
+        <rect x="1400" y="310" width="368" height="180" class="s fill-g"/>
+        <text x="1584" y="382" text-anchor="middle" class="lbl">THE VAULT</text>
+        <text x="1584" y="428" text-anchor="middle" class="mn">mints to principal</text>
+      </g>
+
+      <!-- everything comes back to the principal -->
+      <g class="g5">
+        <path d="M1584 498 V566 H230 V498" class="s" marker-end="url(#a7)"/>
+        <rect x="640" y="538" width="540" height="56" class="s fill-w"/>
+        <text x="910" y="576" text-anchor="middle" class="lbl-sm">SHARES AND ASSETS, ALWAYS HOME</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     8 — SEVEN CHECKS
+     Seven checks, cheapest first. Right caller, right vault, not
+     expired. Then the router asks the registry who owns the agent and
+     requires the signature to recover to that same person. Then: not
+     revoked, and enough cap left. The principal is never a field in
+     the mandate. We derive it and force the signature to match.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">How</span><span class="rule"></span><span class="sub">Inside the transaction</span></span>
+    <span class="meta">08 / 11</span>
+  </div>
+  <div class="head dark">
+    <h2 class="reveal d1">Seven checks,<br>then the money moves</h2>
+    <span class="note reveal d2">each failure has<br>its own name</span>
+  </div>
+  <div class="canvas gray">
+    <svg viewBox="0 0 1808 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Seven sequential checks, each dropping out to its own named error, ending in a deposit">
+      <defs><marker id="a6" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
+        <path d="M0,1 L11,6.5 L0,12 z" fill="#0A0A0A"/></marker></defs>
+
+      <!-- the happy path runs behind the gates -->
+      <g class="g1"><path d="M8 150 H1470" class="s"/></g>
+
+      <!-- gate 1 -->
+      <g class="g2">
+        <rect x="40" y="70" width="180" height="160" class="s fill-w"/>
+        <text x="130" y="126" text-anchor="middle" class="cap">01</text>
+        <text x="130" y="168" text-anchor="middle" class="lbl-sm">CALLER</text>
+        <path d="M130 236 V300" class="s" marker-end="url(#a6)"/>
+        <rect x="40" y="326" width="180" height="52" class="s fill-k"/>
+        <text x="130" y="358" text-anchor="middle" class="mn-w">NotAgent</text>
+      </g>
+      <!-- gate 2 -->
+      <g class="g2">
+        <rect x="244" y="70" width="180" height="160" class="s fill-w"/>
+        <text x="334" y="126" text-anchor="middle" class="cap">02</text>
+        <text x="334" y="168" text-anchor="middle" class="lbl-sm">VAULT</text>
+        <path d="M334 236 V300" class="s" marker-end="url(#a6)"/>
+        <rect x="244" y="326" width="180" height="52" class="s fill-k"/>
+        <text x="334" y="358" text-anchor="middle" class="mn-w">WrongVault</text>
+      </g>
+      <!-- gate 3 -->
+      <g class="g3">
+        <rect x="448" y="70" width="180" height="160" class="s fill-w"/>
+        <text x="538" y="126" text-anchor="middle" class="cap">03</text>
+        <text x="538" y="168" text-anchor="middle" class="lbl-sm">EXPIRY</text>
+        <path d="M538 236 V300" class="s" marker-end="url(#a6)"/>
+        <rect x="448" y="326" width="180" height="52" class="s fill-k"/>
+        <text x="538" y="358" text-anchor="middle" class="mn-w">MandateExpired</text>
+      </g>
+      <!-- gate 4 -->
+      <g class="g3">
+        <rect x="652" y="70" width="180" height="160" class="s fill-p"/>
+        <text x="742" y="126" text-anchor="middle" class="cap">04</text>
+        <text x="742" y="168" text-anchor="middle" class="lbl-sm">OWNER</text>
+        <path d="M742 236 V300" class="s" marker-end="url(#a6)"/>
+        <rect x="652" y="326" width="180" height="52" class="s fill-k"/>
+        <text x="742" y="358" text-anchor="middle" class="mn-w" font-size="14">AgentNotRegistered</text>
+      </g>
+      <!-- gate 5 -->
+      <g class="g4">
+        <rect x="856" y="70" width="180" height="160" class="s fill-p"/>
+        <text x="946" y="126" text-anchor="middle" class="cap">05</text>
+        <text x="946" y="168" text-anchor="middle" class="lbl-sm">SIGNATURE</text>
+        <path d="M946 236 V300" class="s" marker-end="url(#a6)"/>
+        <rect x="856" y="326" width="180" height="52" class="s fill-k"/>
+        <text x="946" y="358" text-anchor="middle" class="mn-w" font-size="16">InvalidSignature</text>
+      </g>
+      <!-- gate 6 -->
+      <g class="g4">
+        <rect x="1060" y="70" width="180" height="160" class="s fill-w"/>
+        <text x="1150" y="126" text-anchor="middle" class="cap">06</text>
+        <text x="1150" y="168" text-anchor="middle" class="lbl-sm">REVOKED</text>
+        <path d="M1150 236 V300" class="s" marker-end="url(#a6)"/>
+        <rect x="1060" y="326" width="180" height="52" class="s fill-k"/>
+        <text x="1150" y="358" text-anchor="middle" class="mn-w" font-size="16">MandateRevoked</text>
+      </g>
+      <!-- gate 7 -->
+      <g class="g4">
+        <rect x="1264" y="70" width="180" height="160" class="s fill-w"/>
+        <text x="1354" y="126" text-anchor="middle" class="cap">07</text>
+        <text x="1354" y="168" text-anchor="middle" class="lbl-sm">CAP</text>
+        <path d="M1354 236 V300" class="s" marker-end="url(#a6)"/>
+        <rect x="1264" y="326" width="180" height="52" class="s fill-k"/>
+        <text x="1354" y="358" text-anchor="middle" class="mn-w" font-size="16">ExceedsMandate</text>
+      </g>
+
+      <!-- through -->
+      <g class="g5">
+        <path d="M1470 150 H1524" class="s" marker-end="url(#a6)"/>
+        <rect x="1550" y="70" width="220" height="160" class="s fill-g"/>
+        <text x="1660" y="162" text-anchor="middle" class="lbl">DEPOSIT</text>
+        <rect x="508" y="470" width="792" height="110" class="s fill-p"/>
+        <text x="904" y="518" text-anchor="middle" class="lbl-sm">CHECKS 04 AND 05 ARE THE WHOLE TRICK:</text>
+        <text x="904" y="556" text-anchor="middle" class="mn" font-size="21">the principal is derived, then the signature must match it</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     9 — DEMO
+     Lights down, switch to the terminal. Eleven transactions, eight
+     of them revert, because the failures are the product.
+     ============================================================ -->
+<section class="slide demo-slide">
+  <h1 class="reveal d1">Demo</h1>
+</section>
+
+<!-- ============================================================
+     10 — NEXT STEPS
+     Two directions after the hackathon. First, a platform that issues
+     custom mandates and routers per vault, one router to one vault or
+     one router across many. Second, revenue: charge the vault a success
+     fee on the allocation that reaches it through our routers.
+     ============================================================ -->
+<section class="slide content">
+  <div class="band">
+    <span class="left"><span class="pill">After the demo</span><span class="rule"></span><span class="sub">Where this goes</span></span>
+    <span class="meta">10 / 11</span>
+  </div>
+  <div class="head green">
+    <h2 class="reveal d1">Next steps</h2>
+    <span class="note reveal d2">a platform, then<br>a revenue line</span>
+  </div>
+  <div class="canvas">
+    <svg viewBox="0 0 1808 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Next steps: issuing routers per vault in one-to-one or one-to-many shapes, and charging vaults a success fee on agent allocation">
+      <defs><marker id="a10" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+        <path d="M0,1 L10,6 L0,11 z" fill="#0A0A0A"/></marker></defs>
+
+      <!-- the two halves meet at a border, as everything else does -->
+      <path d="M904 0 V620" class="s"/>
+
+      <!-- 01 — issue routers per vault -->
+      <g class="g1">
+        <rect x="40" y="10" width="62" height="52" class="fill-k"/>
+        <text x="71" y="48" text-anchor="middle" class="lbl lbl-w">01</text>
+        <text x="126" y="48" class="lbl">ISSUE CUSTOM MANDATES AND ROUTERS</text>
+      </g>
+
+      <g class="g2">
+        <rect x="40" y="130" width="250" height="92" class="s fill-p"/>
+        <text x="165" y="185" text-anchor="middle" class="lbl-sm">ROUTER</text>
+        <path d="M298 176 H392" class="s" marker-end="url(#a10)"/>
+        <rect x="418" y="130" width="250" height="92" class="s fill-g"/>
+        <text x="543" y="185" text-anchor="middle" class="lbl-sm">VAULT</text>
+        <text x="770" y="187" text-anchor="middle" class="lbl">1 : 1</text>
+      </g>
+
+      <g class="g3">
+        <rect x="40" y="400" width="250" height="92" class="s fill-p"/>
+        <text x="165" y="455" text-anchor="middle" class="lbl-sm">ROUTER</text>
+        <path d="M298 446 H350 V326 H392" class="s" marker-end="url(#a10)"/>
+        <path d="M298 446 H392" class="s" marker-end="url(#a10)"/>
+        <path d="M298 446 H350 V566 H392" class="s" marker-end="url(#a10)"/>
+        <rect x="418" y="286" width="250" height="80" class="s fill-g"/>
+        <text x="543" y="334" text-anchor="middle" class="lbl-sm">VAULT</text>
+        <rect x="418" y="406" width="250" height="80" class="s fill-g"/>
+        <text x="543" y="454" text-anchor="middle" class="lbl-sm">VAULT</text>
+        <rect x="418" y="526" width="250" height="80" class="s fill-g"/>
+        <text x="543" y="574" text-anchor="middle" class="lbl-sm">VAULT</text>
+        <text x="770" y="457" text-anchor="middle" class="lbl">1 : N</text>
+      </g>
+
+      <!-- 02 — success fee on what the agents bring in -->
+      <g class="g4">
+        <rect x="950" y="10" width="62" height="52" class="fill-k"/>
+        <text x="981" y="48" text-anchor="middle" class="lbl lbl-w">02</text>
+        <text x="1036" y="48" class="lbl">CHARGE SUCCESS FEE OR SUBSCRIPTION</text>
+      </g>
+
+      <g class="g5">
+        <rect x="950" y="150" width="230" height="100" class="s fill-w"/>
+        <text x="1065" y="209" text-anchor="middle" class="lbl-sm">AGENTS</text>
+        <path d="M1188 200 H1252" class="s" marker-end="url(#a10)"/>
+        <rect x="1278" y="150" width="230" height="100" class="s fill-p"/>
+        <text x="1393" y="209" text-anchor="middle" class="lbl-sm">OUR ROUTER</text>
+        <path d="M1516 200 H1580" class="s" marker-end="url(#a10)"/>
+        <rect x="1606" y="150" width="162" height="100" class="s fill-g"/>
+        <text x="1687" y="209" text-anchor="middle" class="lbl-sm">VAULT</text>
+        <text x="1360" y="128" text-anchor="middle" class="cap">ALLOCATION THE VAULT COULD NOT TAKE BEFORE</text>
+
+        <path d="M1687 268 V352 H1393 V430" class="s" marker-end="url(#a10)"/>
+        <rect x="1030" y="440" width="726" height="130" class="shadow" transform="translate(6,6)"/>
+        <rect x="1030" y="440" width="726" height="130" class="s fill-w"/>
+        <text x="1393" y="500" text-anchor="middle" class="lbl">SUCCESS FEE</text>
+        <text x="1393" y="542" text-anchor="middle" class="mn" font-size="21">a share of the AUM that arrives through us</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<!-- ============================================================
+     11 — THANK YOU
+     ============================================================ -->
+<section class="slide demo-slide">
+  <h1 class="reveal d1 thanks">Thank you!</h1>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE CONTROLLER
+   =========================================== */
+class SlidePresentation {
+  constructor(){
+    this.slides = document.querySelectorAll('.slide');
+    this.stage = document.getElementById('deckStage');
+    this.current = 0;
+    this.setupStageScale();
+    this.setupKeyboardNav();
+    this.setupTouchNav();
+    this.setupWheelNav();
+    this.showSlide(0);
+  }
+  setupStageScale(){
+    const scale = () => {
+      const f = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      const x = (window.innerWidth  - 1920 * f) / 2;
+      const y = (window.innerHeight - 1080 * f) / 2;
+      this.stage.style.transform = 'translate(' + x + 'px, ' + y + 'px) scale(' + f + ')';
+    };
+    scale(); window.addEventListener('resize', scale);
+  }
+  setupKeyboardNav(){
+    document.addEventListener('keydown', (e) => {
+      if (e.target.getAttribute('contenteditable') === 'true') return;
+      if (['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)){ e.preventDefault(); this.next(); }
+      if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){ e.preventDefault(); this.prev(); }
+      if (e.key === 'Home') this.showSlide(0);
+      if (e.key === 'End')  this.showSlide(this.slides.length - 1);
+    });
+  }
+  setupTouchNav(){
+    let sx = 0, sy = 0;
+    document.addEventListener('touchstart', (e) => { sx = e.changedTouches[0].clientX; sy = e.changedTouches[0].clientY; }, {passive:true});
+    document.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 50) return;
+      (Math.abs(dx) > Math.abs(dy) ? dx < 0 : dy < 0) ? this.next() : this.prev();
+    }, {passive:true});
+  }
+  setupWheelNav(){
+    let locked = false;
+    window.addEventListener('wheel', (e) => {
+      if (locked || Math.abs(e.deltaY) < 24) return;
+      locked = true; setTimeout(() => locked = false, 700);
+      e.deltaY > 0 ? this.next() : this.prev();
+    }, {passive:true});
+  }
+  next(){ this.showSlide(this.current + 1); }
+  prev(){ this.showSlide(this.current - 1); }
+  showSlide(i){
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((s, n) => {
+      s.classList.toggle('active',  n === this.current);
+      s.classList.toggle('visible', n === this.current);
+    });
+  }
+}
+const deck = new SlidePresentation();
+
+/* ===========================================
+   INLINE EDITING
+   Hover the top-left corner or press E. Ctrl+S downloads a copy.
+   =========================================== */
+const editor = {
+  isActive:false,
+  targets(){ return document.querySelectorAll('.deck-stage h1, .deck-stage h2, .deck-stage h3, .deck-stage p, .deck-stage .pill, .deck-stage .chip, .deck-stage .sub, .deck-stage .note, .deck-stage text'); },
+  toggleEditMode(){
+    this.isActive = !this.isActive;
+    const btn = document.getElementById('editToggle');
+    btn.classList.toggle('active', this.isActive);
+    btn.classList.toggle('show', this.isActive);
+    btn.textContent = this.isActive ? 'Done' : 'Edit';
+    this.targets().forEach((el) => {
+      el.setAttribute('contenteditable', this.isActive ? 'true' : 'false');
+      el.oninput = () => this.save();
+    });
+  },
+  save(){
+    const data = {};
+    this.targets().forEach((el, i) => { data[i] = el.innerHTML; });
+    try { localStorage.setItem('amvg-visual-edits', JSON.stringify(data)); } catch (e) {}
+  },
+  restore(){
+    let data;
+    try { data = JSON.parse(localStorage.getItem('amvg-visual-edits') || 'null'); } catch (e) { return; }
+    if (!data) return;
+    this.targets().forEach((el, i) => { if (data[i] !== undefined) el.innerHTML = data[i]; });
+  },
+  download(){
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+    const blob = new Blob(['<!DOCTYPE html>' + clone.outerHTML], {type:'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'agent-vault-gate.html';
+    a.click();
+  }
+};
+editor.restore();
+
+const hotzone = document.querySelector('.edit-hotzone');
+const editToggle = document.getElementById('editToggle');
+let hideTimeout = null;
+const showBtn = () => { clearTimeout(hideTimeout); editToggle.classList.add('show'); };
+const hideBtn = () => { hideTimeout = setTimeout(() => { if (!editor.isActive) editToggle.classList.remove('show'); }, 400); };
+hotzone.addEventListener('mouseenter', showBtn);
+hotzone.addEventListener('mouseleave', hideBtn);
+editToggle.addEventListener('mouseenter', showBtn);
+editToggle.addEventListener('mouseleave', hideBtn);
+editToggle.addEventListener('click', () => editor.toggleEditMode());
+hotzone.addEventListener('click', () => editor.toggleEditMode());
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'e' || e.key === 'E') && e.target.getAttribute('contenteditable') !== 'true') editor.toggleEditMode();
+  if ((e.metaKey || e.ctrlKey) && e.key === 's'){ e.preventDefault(); editor.download(); }
+});
+</script>
+</body>
+</html>
