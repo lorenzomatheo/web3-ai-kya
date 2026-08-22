@@ -489,6 +489,67 @@ function renderState() {
     </div>`;
 }
 
+/** Why the link deserves a picture: the mandate never names the principal, so the
+ *  only way to know who authorised a call is to ASK THE REGISTRY at call time, and
+ *  then require the signature to agree. Two independent paths, one address. That is
+ *  the whole mechanism, and it is what makes transferring the id self-revoking --
+ *  which a sentence states but a diagram shows.
+ *
+ *  Inline SVG, theme-aware through the same CSS variables as everything else. */
+function renderLinkInto(stepIndex) {
+  const slot = $(`#s${stepIndex} .extraslot`);
+  if (!slot) return;
+  const id = String(AGENT_ID);
+  const p = short(S.st?.owner || ACC.principal);
+  const a = short(ACC.agent);
+
+  slot.innerHTML = `
+  <div class="diagram">
+    <svg viewBox="0 0 760 250" role="img" aria-label="The mandate names an agent id; the registry maps that id to its owner; the recovered signer must equal that owner.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" class="d-arrow"/>
+        </marker>
+      </defs>
+
+      <!-- the signed mandate -->
+      <rect class="d-box" x="6" y="42" width="212" height="130" rx="9"/>
+      <text class="d-cap" x="20" y="65">SIGNED MANDATE</text>
+      <text class="d-k" x="20" y="90">agentId</text><text class="d-v" x="96" y="90">${id}</text>
+      <text class="d-k" x="20" y="112">agent</text><text class="d-v" x="96" y="112">${a}</text>
+      <text class="d-k" x="20" y="134">cap, expiry…</text>
+      <text class="d-warn" x="20" y="160">✗ no principal field</text>
+
+      <!-- the registry -->
+      <rect class="d-box d-accent" x="284" y="18" width="196" height="92" rx="9"/>
+      <text class="d-cap d-cap-a" x="298" y="41">ERC-8004 REGISTRY</text>
+      <text class="d-k" x="298" y="66">token #${id}</text>
+      <text class="d-k" x="298" y="90">owner</text><text class="d-v" x="360" y="90">${p}</text>
+
+      <!-- the principal, where both paths must land -->
+      <rect class="d-box d-good" x="546" y="86" width="208" height="78" rx="9"/>
+      <text class="d-cap d-cap-g" x="560" y="109">THE PRINCIPAL</text>
+      <text class="d-v" x="560" y="134">${p}</text>
+      <text class="d-note" x="560" y="154">derived, never declared</text>
+
+      <!-- mandate -> registry -->
+      <path class="d-line" d="M218,86 L284,64" marker-end="url(#ar)"/>
+      <text class="d-lbl" x="224" y="62">agentId</text>
+
+      <!-- registry -> principal -->
+      <path class="d-line" d="M480,74 L546,110" marker-end="url(#ar)"/>
+      <text class="d-lbl" x="486" y="72">ownerOf(${id})</text>
+
+      <!-- signature -> principal, the second path -->
+      <path class="d-line d-dash" d="M112,172 L112,214 Q112,226 128,226 L636,226 Q652,226 652,214 L652,164" marker-end="url(#ar)"/>
+      <text class="d-lbl" x="284" y="220">ecrecover(digest, signature)  →  must equal</text>
+    </svg>
+    <p class="d-cap-note">Both arrows have to land on the same address. Move token #${id}
+      to someone else and the registry answers differently — every mandate signed under
+      it stops verifying, with no revocation needed.</p>
+  </div>`;
+}
+
 /** The mandate, inline on the step that produced it.
  *
  *  Worth showing rather than describing, because the shape is the argument: there is
@@ -500,7 +561,7 @@ function renderMandateInto(stepIndex) {
   const sig = strip(S.sig);
   const expiry = new Date(Number(m.expiry) * 1000);
   const days = Math.round((Number(m.expiry) - Date.now() / 1000) / 86400);
-  const slot = $(`#s${stepIndex} .mandateslot`);
+  const slot = $(`#s${stepIndex} .extraslot`);
   if (!slot) return;
 
   const f = (k, v, note) => `<div><span>${k}</span><b>${v}</b><em>${note}</em></div>`;
@@ -534,7 +595,7 @@ function renderSteps(list) {
     <li id="s${i}" class="step">
       <div class="num">${i + 1}</div>
       <div class="body"><div class="t">${s.t}</div><div class="d">${s.d}</div>
-      <div class="out"></div><div class="mandateslot"></div><div class="nextslot"></div></div>
+      <div class="out"></div><div class="extraslot"></div><div class="nextslot"></div></div>
     </li>`,
     )
     .join("");
@@ -597,6 +658,10 @@ async function stepOnce() {
     li.classList.add("done");
     li.querySelector(".out").innerHTML = `<code>${msg}</code>`;
     await readState();
+    if (S.st?.owner && !S.linkShown) {
+      renderLinkInto(i);
+      S.linkShown = true;
+    }
     if (S.mandate && S.sig && !S.mandateShown) {
       renderMandateInto(i);
       S.mandateShown = true;
@@ -684,6 +749,7 @@ async function start() {
   S.mandate = null;
   S.sig = null;
   S.mandateShown = false;
+  S.linkShown = false;
   S.i = 0;
   S.list = steps();
 

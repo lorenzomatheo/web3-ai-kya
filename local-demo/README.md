@@ -26,6 +26,19 @@ is the argument: there is no principal field. The principal is derived from
 `registry.ownerOf(agentId)` and must equal the recovered signer, which is what makes
 transferring the identity self-revoking.
 
+## The diagram on step 6
+
+The link is the one part of this that a sentence carries badly, so it is drawn: the
+mandate names an `agentId` and **not** a principal, the router asks
+`registry.ownerOf(agentId)` at call time, and the recovered signer must equal whatever
+that returns.
+
+Two independent arrows landing on one address. It is also why an `agentId` transfer is
+self-revoking — move the token and the registry answers differently, so every mandate
+signed under it stops verifying with no revocation transaction needed.
+
+Inline SVG, live values, themed from the same CSS variables as the rest of the page.
+
 ## Why the principal has to approve (step 9)
 
 A fair question when watching it, so the step says so on the page.
