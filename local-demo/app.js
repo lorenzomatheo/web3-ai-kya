@@ -343,7 +343,7 @@ function steps() {
     },
     {
       t: "The principal approves USDC",
-      d: "<b>ERC-20 requires this, not the design.</b> The router calls <code>transferFrom</code> on the principal's USDC, which needs a standing allowance — a signature cannot move tokens on its own. Without it the deposit fails with OpenZeppelin's <code>ERC20InsufficientAllowance</code>, not one of our errors. The mandate is the policy layer on top: the allowance says <em>how much can move</em>, the mandate says <em>who may move it, where to, and up to what</em>. Set equal to the cap here as intended practice.",
+      d: "<b>ERC-20 requires the allowance.</b> The mandate is the policy layer on top: the allowance says <em>how much can move</em>, the mandate says <em>who may move it, where to, and up to what</em>. Set equal to the cap here as intended practice.",
       run: async () => {
         await send(ACC.principal, { to: S.usdc, data: SEL.approve + wordAddr(S.router) + word(CAP) });
         return `allowance ${usdc(CAP)} USDC == cap`;
