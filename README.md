@@ -1,12 +1,28 @@
 # Agent Vault Gate
 
+Vaults have learned to KYC a human and whitelist their wallet, but what about when
+people start delegating allocation decisions to their agents?
+
+**KYC scales to people. It does not scale to agents.** A compliance desk can onboard a
+human once; it cannot onboard the fleet of agents that human spins up, retires and
+replaces every quarter — and it should not have to, because the agents are not the
+customer.
+
+This keeps KYC where it belongs, on the human, and lets agents prove **authority**
+instead of **identity**. One KYC, any number of agents, each capped and revocable on
+its own.
+
+---
+
 On-chain proof that an AI agent's wallet acts for a KYC'd human, within limits that
 human signed — while the agent's own balance stays at zero, permanently.
 
 An agent that manages a position has to deposit and redeem on someone's behalf. The
 usual answer is to fund its wallet and hope. This one never funds it: the principal
 signs a **mandate** off-chain, and `MandateRouter` proves on-chain that the agent is
-acting under it before a single token moves.
+acting under it before a single token moves. The vault's allowlist holds the human and
+**never the agent** — an agent that tries to hold a position directly is refused by
+name.
 
 **Live on Ethereum Sepolia**, verified:
 
