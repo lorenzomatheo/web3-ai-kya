@@ -343,7 +343,7 @@ function steps() {
     },
     {
       t: "The principal approves USDC",
-      d: "Set equal to the cap. A larger allowance would still be bound by the mandate — that is the whole point — but equal-to-cap is the intended practice.",
+      d: "<b>ERC-20 requires this, not the design.</b> The router calls <code>transferFrom</code> on the principal's USDC, which needs a standing allowance — a signature cannot move tokens on its own. Without it the deposit fails with OpenZeppelin's <code>ERC20InsufficientAllowance</code>, not one of our errors. The mandate is the policy layer on top: the allowance says <em>how much can move</em>, the mandate says <em>who may move it, where to, and up to what</em>. Set equal to the cap here as intended practice.",
       run: async () => {
         await send(ACC.principal, { to: S.usdc, data: SEL.approve + wordAddr(S.router) + word(CAP) });
         return `allowance ${usdc(CAP)} USDC == cap`;
@@ -489,61 +489,42 @@ function renderState() {
     </div>`;
 }
 
-/** The mandate as the document it actually is.
+/** The mandate, inline on the step that produced it.
  *
- *  Worth drawing rather than dumping: the shape is the argument. The principal is
- *  NOT a field -- it is derived from `agentId` via the registry, which is what makes
- *  transferring the id self-revoking. And the signature covers the digest, which
- *  folds in chainId and verifyingContract, so the same struct signed for another
- *  chain or another router is a different authorization. */
-function renderMandate() {
+ *  Worth showing rather than describing, because the shape is the argument: there is
+ *  no principal field. It is derived from `registry.ownerOf(agentId)` and must equal
+ *  the recovered signer, which is what makes transferring the identity self-revoking.
+ */
+function renderMandateInto(stepIndex) {
   const m = S.mandate;
   const sig = strip(S.sig);
   const expiry = new Date(Number(m.expiry) * 1000);
   const days = Math.round((Number(m.expiry) - Date.now() / 1000) / 86400);
+  const slot = $(`#s${stepIndex} .mandateslot`);
+  if (!slot) return;
 
-  $("#mandate").innerHTML = `
+  const f = (k, v, note) => `<div><span>${k}</span><b>${v}</b><em>${note}</em></div>`;
+
+  slot.innerHTML = `
     <div class="mcard">
-      <div class="mhead">
-        <div><span class="mkicker">signed off-chain · no gas · no transaction</span>
-          <h3>Mandate</h3></div>
-        <div class="seal" title="signed by the principal">✓ signed</div>
-      </div>
-
+      <div class="mhead"><span class="mkicker">the signed mandate</span>
+        <span class="seal">✓ off-chain · no gas</span></div>
       <div class="mfields">
-        <div><span>agentId</span><b>${m.agentId}</b>
-          <em>the identity. The principal is whoever owns it <u>right now</u> — transfer it and this dies.</em></div>
-        <div><span>agent</span><b>${short(m.agent)}</b>
-          <em>the only address permitted to call.</em></div>
-        <div><span>target</span><b>${short(m.target)}</b>
-          <em>one vault, and no other.</em></div>
-        <div><span>cap</span><b>${usdc(m.cap)} USDC</b>
-          <em>cumulative. Redeeming does not give any of it back.</em></div>
-        <div><span>expiry</span><b>${expiry.toLocaleDateString()}</b>
-          <em>in ${days} days. Ends authority to redeem too, not just to deposit.</em></div>
-        <div><span>nonce</span><b>${m.nonce}</b>
-          <em>distinguishes otherwise identical mandates.</em></div>
+        ${f("agentId", m.agentId, "the identity — transfer it and this dies")}
+        ${f("agent", short(m.agent), "the only address permitted to call")}
+        ${f("target", short(m.target), "one vault, no other")}
+        ${f("cap", usdc(m.cap) + " USDC", "cumulative; redeeming gives none back")}
+        ${f("expiry", expiry.toLocaleDateString(), `in ${days} days — ends redeeming too`)}
+        ${f("nonce", m.nonce, "distinguishes identical mandates")}
       </div>
-
-      <div class="mabsent">
-        <strong>No principal field.</strong> It is derived from
-        <code>registry.ownerOf(${m.agentId})</code> and must equal the recovered signer.
-        That is what binds the identity to the authorization rather than merely
-        mentioning it.
-      </div>
-
+      <div class="mabsent"><strong>No principal field.</strong> Derived from
+        <code>registry.ownerOf(${m.agentId})</code>, and it must equal the recovered
+        signer.</div>
       <div class="msig">
         <div class="mrow"><span>digest</span><code>${S.digest}</code></div>
-        <div class="mrow"><span>r</span><code>0x${sig.slice(0, 64)}</code></div>
-        <div class="mrow"><span>s</span><code>0x${sig.slice(64, 128)}</code></div>
-        <div class="mrow"><span>v</span><code>0x${sig.slice(128, 130)}</code></div>
+        <div class="mrow"><span>sig</span><code>0x${sig.slice(0, 32)}… <i>r</i>·<i>s</i>·<i>v</i>, 65 bytes</code></div>
       </div>
-      <p class="mfoot">
-        The digest folds in <code>chainId</code> and <code>verifyingContract</code>, so
-        this signature authorizes nothing on another chain or another router.
-      </p>
     </div>`;
-  $("#mandate").classList.remove("hidden");
 }
 
 function renderSteps(list) {
@@ -553,7 +534,7 @@ function renderSteps(list) {
     <li id="s${i}" class="step">
       <div class="num">${i + 1}</div>
       <div class="body"><div class="t">${s.t}</div><div class="d">${s.d}</div>
-      <div class="out"></div><div class="nextslot"></div></div>
+      <div class="out"></div><div class="mandateslot"></div><div class="nextslot"></div></div>
     </li>`,
     )
     .join("");
@@ -616,7 +597,10 @@ async function stepOnce() {
     li.classList.add("done");
     li.querySelector(".out").innerHTML = `<code>${msg}</code>`;
     await readState();
-    if (S.mandate && S.sig) renderMandate();
+    if (S.mandate && S.sig && !S.mandateShown) {
+      renderMandateInto(i);
+      S.mandateShown = true;
+    }
   } catch (e) {
     li.classList.remove("active");
     li.classList.add("failed");
@@ -699,11 +683,11 @@ async function start() {
   S.key = null;
   S.mandate = null;
   S.sig = null;
+  S.mandateShown = false;
   S.i = 0;
   S.list = steps();
 
   $("#checks-section").classList.add("hidden");
-  $("#mandate").classList.add("hidden");
   renderSteps(S.list);
   $("#flow").classList.remove("hidden");
   await readState();

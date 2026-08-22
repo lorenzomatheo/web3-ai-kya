@@ -21,10 +21,30 @@ Ctrl-C stops both.
   it follows you down the page instead of leaving you scrolling back to the header.
 - **Play the rest** — runs the remainder unattended, and turns into **Pause**.
 
-The signed mandate is drawn as a document once step 8 completes, because its *shape*
+The signed mandate is drawn inline on the step that produced it, because its *shape*
 is the argument: there is no principal field. The principal is derived from
 `registry.ownerOf(agentId)` and must equal the recovered signer, which is what makes
 transferring the identity self-revoking.
+
+## Why the principal has to approve (step 9)
+
+A fair question when watching it, so the step says so on the page.
+
+**ERC-20 requires it; the design does not.** The router moves the principal's USDC
+with `transferFrom`, and ERC-20 only permits that against a standing allowance. A
+signature cannot move tokens on its own — there is no "this contract showed me a valid
+mandate" path in the token standard. Without the approval the deposit reverts
+`ERC20InsufficientAllowance`, which is OpenZeppelin's error rather than one of ours.
+
+The two live at different layers. **The allowance says how much can move. The mandate
+says who may move it, to where, and up to what** — and it binds tighter, which is the
+point of the loop-until-rejection test: a 10,000 allowance against a 1,000 cap still
+only ever moves 1,000.
+
+It could be removed for a token supporting EIP-2612 `permit`: the principal signs the
+approval instead of sending it, and the agent submits both. Circle's USDC does support
+`permit` on Sepolia; the `MockUSDC` double here does not, and the design did not take
+that route.
 
 ## Why a fresh chain and not a fork
 
