@@ -360,7 +360,7 @@ function steps() {
     },
     {
       t: "The principal approves the shares",
-      d: "Exactly the position the deposit just created, never unlimited. This could not have happened one step earlier — the position did not exist yet.",
+      d: "<b>The allowance again, this time on the share token.</b> Exactly the position the deposit just created, never unlimited. This could not have happened one step earlier — the position did not exist yet.",
       run: async () => {
         await send(ACC.principal, { to: S.vault, data: SEL.approve + wordAddr(S.router) + word(S.shares) });
         return `approved exactly ${S.shares} shares`;
