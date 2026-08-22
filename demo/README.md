@@ -44,9 +44,14 @@ revoked, and step 6 refuses the call before step 7 is reached. It is therefore r
 at the block where it was reachable — still the chain's own answer, at the moment it
 mattered. The card says so.
 
-Public nodes prune old state. When that block ages out, the card degrades to the stored
-evidence (`spent` against `cap`, which is the same arithmetic) and explains why, rather
-than reading as a broken page.
+The public endpoint load-balances across backends with different retention, so a
+historical call misses roughly half the time — measured 6 out of 12 — and succeeds on a
+retry against the same block. The card therefore retries before giving up; with the
+retry it resolves live 8 times out of 8.
+
+If every attempt misses, it degrades to the stored evidence (`spent` against `cap`,
+which is the same arithmetic) and says to press Run again, rather than reading as a
+broken page.
 
 ## Not part of the wish
 

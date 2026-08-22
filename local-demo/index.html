@@ -162,13 +162,16 @@ button.run:hover { border-color: var(--accent); color: var(--accent); }
 .check p { margin: 0 0 12px; font-size: 13.5px; color: var(--muted); }
 .res { margin-top: auto; padding: 10px 12px; border-radius: 8px; font-size: 12.5px;
   background: color-mix(in srgb, var(--ink) 4%, transparent);
-  display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.res code { word-break: break-all; }
+  display: flex; flex-wrap: wrap; justify-content: space-between;
+  align-items: center; gap: 6px 10px; }
+/* See demo/index.html: without min-width:0 a long nowrap sibling crushes this to one
+   character wide and break-all then renders it one letter per line. */
+.res code { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: normal; }
 .res.ok { background: color-mix(in srgb, var(--good) 12%, transparent); }
 .res.ok code { color: var(--good); font-weight: 600; }
 .res.no { background: color-mix(in srgb, var(--bad) 12%, transparent); }
 .res.no code { color: var(--bad); }
-.tick { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tick { font-size: 11px; color: var(--muted); }
 #runall { font-size: 13px; padding: 8px 18px; border-radius: 999px;
   border: 1px solid var(--accent); background: var(--accent); color: #fff; }
 

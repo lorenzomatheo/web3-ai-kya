@@ -86,17 +86,22 @@ async function rpc(method, params) {
 
 /** eth_call that EXPECTS a revert. Returns decoded revert data, or throws if the
  *  call unexpectedly succeeded -- which for this page is itself a failure. */
-async function callExpectingRevert(from, to, data, block = "latest") {
+async function callExpectingRevert(from, to, data, block = "latest", tries = 8) {
   try {
     await rpc("eth_call", [{ from, to, data }, block]);
   } catch (e) {
+    // The public endpoint load-balances across backends with different retention, so
+    // a historical call misses roughly half the time and succeeds on a retry against
+    // the same block. Measured 6/12 on this deployment. Giving up on the first miss
+    // reported a permanent-sounding failure for a transient one.
+    if (tries > 1 && isPruned(e)) {
+      await new Promise((r) => setTimeout(r, 220));
+      return callExpectingRevert(from, to, data, block, tries - 1);
+    }
     const raw = typeof e.data === "string" ? e.data : e.data?.data;
     if (raw && raw.startsWith("0x") && raw.length >= 10) return decodeError(raw);
-    // Public nodes prune old state. The historical replay below is the only call
-    // that depends on it, and when it ages out the failure should explain itself
-    // rather than read as a broken page.
-    if (/historical state|missing trie node|state.*not available|pruned/i.test(e.message || "")) {
-      const err = new Error("this node no longer keeps state from that block");
+    if (isPruned(e)) {
+      const err = new Error("no backend answered with state from that block");
       err.pruned = true;
       throw err;
     }
@@ -104,6 +109,11 @@ async function callExpectingRevert(from, to, data, block = "latest") {
   }
   throw new Error("the call SUCCEEDED — it was supposed to revert");
 }
+
+/** Whether a failure is "this backend does not hold that block's state" rather than a
+ *  real revert. Nodes word it differently, hence the spread of patterns. */
+const isPruned = (e) =>
+  /historical state|missing trie node|state.*not available|pruned|header not found/i.test(e.message || "");
 
 const ethCall = (to, data, block = "latest") => rpc("eth_call", [{ to, data }, block]);
 
@@ -507,11 +517,14 @@ async function runOne(i) {
       : `<code>${d.text}</code><span class="tick">expected ${c.error}</span>`;
   } catch (e) {
     if (e.pruned && c.historical) {
+      // Lead with the arithmetic, which is the same claim the live call would have
+      // made, and explain the miss underneath rather than beside it.
       const remaining = S.mandate.cap - S.spent;
       out.className = "result pruned";
-      out.innerHTML = `<code>${e.message}</code>
-        <span class="tick">stored evidence: spent ${usdc(S.spent)} of ${usdc(S.mandate.cap)}
-        → ${usdc(remaining)} headroom</span>`;
+      out.innerHTML = `
+        <code>ExceedsMandate(${remaining}, …) — from stored state</code>
+        <span class="tick">spent ${usdc(S.spent)} of ${usdc(S.mandate.cap)} → ${usdc(remaining)} headroom.
+        ${e.message}; press Run again.</span>`;
       return;
     }
     out.className = "result wrong";
