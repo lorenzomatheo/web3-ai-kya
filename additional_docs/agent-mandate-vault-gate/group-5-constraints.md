@@ -1,9 +1,10 @@
 # Group 5 — binding constraints, recorded before the group is authored
 
-**Date:** 2026-08-20 · **Status:** group 5 is UNWRITTEN — `script/` exists on zero
-branches · **Source:** Lorenzo's HIGH on PR #1, 2026-08-21
+**Date:** 2026-08-20 · **Status:** group 5 is now AUTHORED on `feat/g5-deploy-demo`;
+§1 is implemented and proven by mutation, §1b was found while proving it, §2 is
+resolved · **Source:** Lorenzo's HIGH on PR #1, plus the group 5 dry run
 
-This file exists because the finding is a *plan-level* trap with no code to fix yet,
+This file exists because §1 was a *plan-level* trap with no code to fix at the time,
 and a GitHub review thread is not where a binding constraint should live. Everything
 below is a hard requirement on `script/Deploy.s.sol` and the demo, not a suggestion.
 
@@ -63,19 +64,46 @@ level up.
 
 ---
 
+## 1b. HIGH, found during the dry run — a 7702-delegated principal cannot receive the agentId
+
+Not in the original review; surfaced by rehearsing the deploy against a fork of Base
+Sepolia, and it fails in the same place and with the same symptom as §1.
+
+The registry's `register()` uses ERC-721 `_safeMint`, which calls
+`onERC721Received` on the receiver **whenever the receiver has code**. An EOA
+carrying an EIP-7702 delegation has code — `cast code` returns
+`0xef0100<delegate>` — so unless the delegate implements the receiver hook, the mint
+reverts `ERC721InvalidReceiver` and the deploy aborts.
+
+This is not hypothetical. All three of anvil's well-known default accounts are
+delegated on live Base Sepolia, because their private keys are public:
+
+```bash
+cast code 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --rpc-url "$BASE_SEPOLIA_RPC_URL"
+#   0xef010091128fa0c92671265263548853eb875feded35b4
+```
+
+**Required:** before provisioning, confirm the principal address is codeless.
+
+```bash
+cast code "$PRINCIPAL_ADDRESS" --rpc-url "$BASE_SEPOLIA_RPC_URL"   # must be 0x
+```
+
+If it is not, generate a fresh principal key rather than trying to clear the
+delegation. `scripts/dryrun.sh` asserts this for its own generated accounts so the
+failure, if it ever recurs, arrives with a legible message instead of from inside an
+ERC-721 mint.
+
+---
+
 ## 2. The `scripts/` vs `script/` split is currently broken
 
-- `package.json` declares `"demo": "tsx scripts/demo.ts"` — **plural**, and that file
-  exists on no branch.
-- `foundry.toml` sets `script = "script"` — **singular**, which is where
-  `forge script script/Deploy.s.sol` will look.
-
-Both are correct in isolation: `script/` is Foundry's Solidity broadcast directory,
-`scripts/` is the TypeScript demo runner. They are different things and the split is
-intentional, but nothing currently creates either directory, and group 5's Validation
-chain ends in `pnpm demo`. Settle it when group 5 is authored; do not "fix" the
-`package.json` line to singular, which would point the TS runner at Foundry's script
-dir.
+**Resolved as authored.** Both were correct in isolation and the split was
+intentional: `script/` is Foundry's Solidity broadcast directory (`script = "script"`
+in `foundry.toml`), `scripts/` is the TypeScript demo runner
+(`"demo": "tsx scripts/demo.ts"`). Group 5 creates both. The `package.json` line was
+**not** "fixed" to singular, which would have pointed the TS runner at Foundry's
+script dir.
 
 ---
 
