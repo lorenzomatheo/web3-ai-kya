@@ -1,0 +1,21 @@
+{
+  "name": "web3-ai-kya",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "On-chain proof that an agent address acts for a KYC'd principal, within signed limits.",
+  "scripts": {
+    "demo": "tsx scripts/demo.ts",
+    "dryrun": "./scripts/dryrun.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "@types/node": "^20.19.0"
+  },
+  "dependencies": {
+    "viem": "^2.21.55"
+  },
+  "packageManager": "pnpm@10.10.0"
+}
